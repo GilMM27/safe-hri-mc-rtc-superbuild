@@ -6,6 +6,7 @@
 #include <Eigen/Geometry>
 #include <condition_variable>
 #include <cmath>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -147,12 +148,15 @@ class SmplhDistanceWorker
       { std::unique_lock<std::mutex> lock(mutex_); cv_.wait(lock,[&]{return stopping_ || pending_;});
         if(stopping_) return; input=std::move(pending_); }
       SmplhDistanceSnapshot result;
+      const auto start = std::chrono::steady_clock::now();
       try { result=query(*input); }
       catch(const std::exception & e)
       {
         result.sequence=input->sequence; result.motion_frame=input->frame;
         result.sample_simulation_time=input->time; result.error=e.what();
       }
+      result.worker_duration_seconds =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
       { std::lock_guard<std::mutex> lock(mutex_); if(result.sequence >= completed_.sequence) completed_=std::move(result); }
     }
   }
@@ -186,11 +190,17 @@ public:
     thread_=std::thread(&SmplhDistanceWorker::run,this);
   }
   void submit(std::uint64_t seq,uint32_t frame,double time,const float * vertices,uint32_t nvertices,
-              const mjData * data,const mjModel * model)
+              const mjData * data,const mjModel * model,int humanSurfaceGeom)
   {
     auto input=std::make_unique<SmplhQueryInput>(); input->sequence=seq; input->frame=frame; input->time=time;
+    Eigen::Map<const Eigen::Matrix<double,3,3,Eigen::RowMajor>> humanRotation(data->geom_xmat+9*humanSurfaceGeom);
+    Eigen::Map<const Eigen::Vector3d> humanTranslation(data->geom_xpos+3*humanSurfaceGeom);
     input->vertices.reserve(nvertices);
-    for(uint32_t i=0;i<nvertices;++i) input->vertices.emplace_back(vertices[3*i],vertices[3*i+1],vertices[3*i+2]);
+    for(uint32_t i=0;i<nvertices;++i)
+    {
+      Eigen::Vector3d local(vertices[3*i],vertices[3*i+1],vertices[3*i+2]);
+      input->vertices.emplace_back(humanRotation * local + humanTranslation);
+    }
     input->robot_poses.reserve(robots_.size());
     for(size_t j=0;j<robots_.size();++j)
     {

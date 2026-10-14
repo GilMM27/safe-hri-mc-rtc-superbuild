@@ -30,6 +30,7 @@ struct SmplhDistanceSnapshot
   std::uint64_t sequence = 0;
   std::uint32_t motion_frame = 0;
   double sample_simulation_time = 0.0;
+  double worker_duration_seconds = 0.0;
   std::string error;
   std::vector<SmplhRegionDistance> regions;
 };
