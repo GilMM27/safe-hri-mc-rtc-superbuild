@@ -142,14 +142,9 @@ only referenced vertices; triangle surfaces are unchanged.
 Current-pose RSS BVHs use top-down refitting, fitting each node from its referenced
 primitives. Bottom-up refitting in the tested FCL 0.7.0 installation
 disagreed with fresh builds on deforming real meshes and is not used.
-Set `SMPLH_DISTANCE_USE_SCH=1` to try an additional SCH convex-hull bound before
-exact FCL queries. It can skip robot geom pairs whose lower bound exceeds the
-current regional minimum. Robot meshes continue through FCL. The snapshot
-reports `sch_pruned_pairs` and `sch_duration_seconds`; the default leaves SCH
-off because it was slower on the synthetic benchmark below.
-
-Set `SMPLH_DISTANCE_MODE=sch_approx` to measure each body region as connected
-convex patches with SCH instead of querying its triangle surface with FCL.
+By default, the worker measures each body region as connected convex patches
+with SCH (`SMPLH_DISTANCE_MODE=sch_approx`). Set `SMPLH_DISTANCE_MODE=fcl` to
+use exact triangle-surface FCL distances instead.
 `SMPLH_SCH_PATCH_FACES` controls the maximum triangle count in each patch
 (default 64). Patch membership is fixed, while their vertices update at each
 motion frame. This mode also treats robot mesh geoms as convex hulls. The
@@ -162,8 +157,15 @@ zero clearance. Smaller patches can reduce this error but increase query work.
 After rebuilding the superbuild, run with the existing `SMPLH_CACHE` setting:
 
 ```sh
-SMPLH_DISTANCE_MODE=sch_approx SMPLH_SCH_PATCH_FACES=64 mc_mujoco --sync
+mc_mujoco --sync
 ```
+
+In exact FCL mode, set `SMPLH_DISTANCE_USE_SCH=1` to try an additional SCH
+convex-hull bound before FCL queries. It can skip robot geom pairs whose lower
+bound exceeds the current regional minimum. Robot meshes continue through FCL.
+The snapshot reports `sch_pruned_pairs` and `sch_duration_seconds`; this
+optional bound stays off by default because it was slower on the synthetic
+benchmark below.
 
 `benchmarks/bench_smplh_sch.cpp` compares all three paths on an animated triangle
 surface with 21 robot spheres. On this machine, with 14,400 triangles and 30

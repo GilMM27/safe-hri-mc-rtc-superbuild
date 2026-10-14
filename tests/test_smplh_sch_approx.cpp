@@ -26,7 +26,8 @@ int main()
   const uint32_t faces[]{0, 1, 2, 0, 1, 3};
   const float vertices[]{0, -1, 1, 0, 1, 1, -1, 0, 0, 1, 0, 0};
   auto measure = [&](const char * mode, const char * patchFaces) {
-    setenv("SMPLH_DISTANCE_MODE", mode, 1);
+    if(mode) setenv("SMPLH_DISTANCE_MODE", mode, 1);
+    else unsetenv("SMPLH_DISTANCE_MODE");
     setenv("SMPLH_SCH_PATCH_FACES", patchFaces, 1);
     mc_mujoco::SmplhDistanceWorker worker;
     worker.configure(model, {{0, 1}}, {"roof"}, faces);
@@ -45,11 +46,15 @@ int main()
   };
   const auto exact = measure("fcl", "2");
   const auto hull = measure("sch_approx", "2");
+  const auto defaultHull = measure(nullptr, "2");
   const auto triangles = measure("sch_approx", "1");
   if(exact.approximate || exact.regions[0].distance < .4 || exact.regions[0].intersecting)
     throw std::runtime_error("exact roof distance is invalid");
   if(!hull.approximate || hull.regions[0].distance != 0 || !hull.regions[0].intersecting)
     throw std::runtime_error("shared convex hull did not expose approximation error");
+  if(!defaultHull.approximate || defaultHull.regions[0].distance != hull.regions[0].distance
+     || defaultHull.regions[0].intersecting != hull.regions[0].intersecting)
+    throw std::runtime_error("default distance mode does not use SCH patches");
   if(!triangles.approximate || std::abs(triangles.regions[0].distance - exact.regions[0].distance) > 1e-4
      || !triangles.regions[0].closest_points_valid)
     throw std::runtime_error("single-triangle SCH patches disagree with FCL");

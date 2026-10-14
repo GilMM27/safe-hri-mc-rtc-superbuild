@@ -6,6 +6,7 @@
 
 int main()
 {
+  setenv("SMPLH_DISTANCE_MODE", "fcl", 1);
   char error[1024]{};
   auto * spec = mj_parseXMLString(R"(
     <mujoco><worldbody>

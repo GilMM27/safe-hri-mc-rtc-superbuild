@@ -454,7 +454,7 @@ public:
     const char * mode = std::getenv("SMPLH_DISTANCE_MODE");
     if(mode && std::string(mode) != "fcl" && std::string(mode) != "sch_approx")
       throw std::runtime_error("SMPLH_DISTANCE_MODE must be fcl or sch_approx");
-    approximateSch_ = mode && std::string(mode) == "sch_approx";
+    approximateSch_ = !mode || std::string(mode) == "sch_approx";
     if(approximateSch_)
     {
       useSch_ = false;
