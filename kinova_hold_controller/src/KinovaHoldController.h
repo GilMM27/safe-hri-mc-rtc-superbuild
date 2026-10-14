@@ -15,5 +15,4 @@ private:
   const mc_mujoco::SmplhDistanceSnapshot * distanceSnapshot() const;
   double regionDistance(const std::string & region) const;
   std::string regionStatus(const std::string & region) const;
-  Eigen::Vector3d closestPoint(const std::string & region, bool robotPoint) const;
 };
