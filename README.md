@@ -131,7 +131,7 @@ alias mc_rviz="ros2 launch mc_rtc_ticker display.launch"
 alias mc_config="gnome-text-editor ~/.config/mc_rtc/mc_rtc.yaml &"
 
 # Configure mc_mujoco: adding objects
-alias mc_mujoco_config="~/.config/mc_rtc/mc_mujoco/mc_mujoco.yaml &"
+alias mc_mujoco_config="gnome-text-editor ~/.config/mc_rtc/mc_mujoco/mc_mujoco.yaml &"
 
 # Source automatically for new terminals
 source ~/workspace/install/setup_mc_rtc.sh
