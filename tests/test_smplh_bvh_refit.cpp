@@ -93,8 +93,10 @@ try
     // A refitted single-triangle bound must match a fresh current-pose bound.
     const auto & actual = model.getBV(0).bv;
     const auto & expected = fresh.getBV(0).bv;
-    if((actual.obb.To - expected.obb.To).norm() > 1e-10
-       || (actual.obb.extent - expected.obb.extent).norm() > 1e-10)
+    if((actual.To - expected.To).norm() > 1e-10
+       || std::abs(actual.l[0] - expected.l[0]) > 1e-10
+       || std::abs(actual.l[1] - expected.l[1]) > 1e-10
+       || std::abs(actual.r - expected.r) > 1e-10)
       throw std::runtime_error("refit bounds differ from current-pose bounds");
   }
 }

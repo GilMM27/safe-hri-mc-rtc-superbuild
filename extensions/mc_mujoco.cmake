@@ -41,3 +41,19 @@ AddProject(mc_mujoco
   DEPENDS mc_rtc
   ${SMPLH_PATCH_ARGS}
 )
+
+if(WITH_SMPLH_PLAYBACK)
+  ExternalProject_Add_Step(mc_mujoco smplh_bridge_refresh
+    COMMAND "${CMAKE_COMMAND}"
+      "-DSOURCE_DIR=${SOURCE_DESTINATION}/mc_mujoco"
+      "-DBRIDGE_SCRIPT=${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/install_bridge.py"
+      -P "${CMAKE_CURRENT_LIST_DIR}/../cmake/scripts/apply-smplh-bridge.cmake"
+    DEPENDEES patch
+    DEPENDERS configure
+    DEPENDS
+      "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/install_bridge.py"
+      "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/NativeSmplhPlayback.h"
+      "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/SmplhDistanceWorker.h"
+      "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/SmplhDistanceSnapshot.h"
+  )
+endif()

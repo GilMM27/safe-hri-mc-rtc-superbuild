@@ -139,9 +139,41 @@ The `prep`, `collide`, and `distance` timings split worker geometry preparation
 from time spent inside FCL collision and distance calls. The total query time
 also includes candidate sorting and result processing. Regional BVHs contain
 only referenced vertices; triangle surfaces are unchanged.
-Current-pose BVHs use top-down refitting, fitting each node from its referenced
-primitives. Bottom-up OBBRSS refitting in the tested FCL 0.7.0 installation
+Current-pose RSS BVHs use top-down refitting, fitting each node from its referenced
+primitives. Bottom-up refitting in the tested FCL 0.7.0 installation
 disagreed with fresh builds on deforming real meshes and is not used.
+Set `SMPLH_DISTANCE_USE_SCH=1` to try an additional SCH convex-hull bound before
+exact FCL queries. It can skip robot geom pairs whose lower bound exceeds the
+current regional minimum. Robot meshes continue through FCL. The snapshot
+reports `sch_pruned_pairs` and `sch_duration_seconds`; the default leaves SCH
+off because it was slower on the synthetic benchmark below.
+
+Set `SMPLH_DISTANCE_MODE=sch_approx` to measure each body region as connected
+convex patches with SCH instead of querying its triangle surface with FCL.
+`SMPLH_SCH_PATCH_FACES` controls the maximum triangle count in each patch
+(default 64). Patch membership is fixed, while their vertices update at each
+motion frame. This mode also treats robot mesh geoms as convex hulls. The
+snapshot's `approximate` flag, the MuJoCo status panel, and the mc_rtc GUI
+identify approximate results; the controller log includes
+`SMPLH_distance_approximate`. Closest points may lie on a patch hull rather
+than a human triangle, and triangle normals are unavailable. A concave surface
+can have positive clearance while its convex patch reports intersection and
+zero clearance. Smaller patches can reduce this error but increase query work.
+After rebuilding the superbuild, run with the existing `SMPLH_CACHE` setting:
+
+```sh
+SMPLH_DISTANCE_MODE=sch_approx SMPLH_SCH_PATCH_FACES=64 mc_mujoco --sync
+```
+
+`benchmarks/bench_smplh_sch.cpp` compares all three paths on an animated triangle
+surface with 21 robot spheres. On this machine, with 14,400 triangles and 30
+samples, the original OBBRSS/FCL worker averaged 27.1 ms, RSS/FCL averaged
+20.7 ms, RSS with SCH pruning averaged 22.2 ms, and approximate SCH patches
+averaged 0.65 ms. The approximate distance differed by 0.21 mm on average
+and 0.35 mm at worst in this scene. SCH pruning skipped 20 of 21 FCL pairs,
+but cost 2.7 ms per sample and the FCL calls it saved cost about 1 ms. RSS
+refitting remained the main cost at about 19.4 ms. This synthetic scene is not
+a real SMPL-H sequence, so its timings will differ from live playback.
 At a 1 ms timestep, the default `SMPLH_DISTANCE_EVERY=25` requests a sample
 every 25 ms; lower this value (for example, `SMPLH_DISTANCE_EVERY=5`) when the
 query duration is comfortably below the interval. If query duration exceeds the

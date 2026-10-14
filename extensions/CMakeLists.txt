@@ -12,3 +12,7 @@ add_subdirectory(
   ${CMAKE_CURRENT_SOURCE_DIR}/../kinova_hold_controller
   ${CMAKE_CURRENT_BINARY_DIR}/kinova_hold_controller
 )
+
+if(WITH_SMPLH_PLAYBACK)
+  add_dependencies(KinovaHoldController mc_mujoco)
+endif()

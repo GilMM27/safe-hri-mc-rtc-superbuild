@@ -42,6 +42,10 @@ KinovaHoldController::KinovaHoldController(mc_rbdyn::RobotModulePtr rm,
   closestPointsConfig.shaft_diam = 0.008;
   closestPointsConfig.head_diam = 0.018;
   closestPointsConfig.head_len = 0.03;
+  logger().addLogEntry("SMPLH_distance_approximate", [this]() {
+    const auto * snapshot = distanceSnapshot();
+    return snapshot && snapshot->approximate;
+  });
   for(const auto * region : regions)
   {
     const std::string name(region);
@@ -84,8 +88,10 @@ std::string KinovaHoldController::regionStatus(const std::string & region) const
     if(value.region != region) continue;
     std::ostringstream status;
     status.precision(4);
-    status << value.distance << " m  |  " << value.robot_geometry;
-    if(value.intersecting) status << "  |  intersection";
+    status << value.distance << " m";
+    if(snapshot->approximate) status << " (approximate)";
+    status << "  |  " << value.robot_geometry;
+    if(value.intersecting) status << (snapshot->approximate ? "  |  hull overlap" : "  |  intersection");
     return status.str();
   }
   return "Region not present in cache";
