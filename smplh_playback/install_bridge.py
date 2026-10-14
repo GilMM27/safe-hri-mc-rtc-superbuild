@@ -4,10 +4,36 @@ from pathlib import Path
 import shutil
 
 
+def timing_readout(text):
+    text=text.replace('pairs %llu/%llu",',
+                      'pairs %llu/%llu\\nprep %.1f ms | collide %.1f ms | distance %.1f ms",')
+    text=text.replace('pairs %llu/%llu | prep %.1f ms', 'pairs %llu/%llu\\nprep %.1f ms')
+    text=text.replace('distance %.1f ms",', 'distance %.1f ms | SCH %.1f ms (%llu pruned) | %s",')
+    text=text.replace('SCH %.1f ms (%llu pruned)",', 'SCH %.1f ms (%llu pruned) | %s",')
+    text=text.replace('static_cast<unsigned long long>(smplh_distance.total_pairs));',
+                      'static_cast<unsigned long long>(smplh_distance.total_pairs),\n'
+                      '                   1000.0 * smplh_distance.preparation_duration_seconds,\n'
+                      '                   1000.0 * smplh_distance.collision_duration_seconds,\n'
+                      '                   1000.0 * smplh_distance.distance_duration_seconds);')
+    text=text.replace('1000.0 * smplh_distance.distance_duration_seconds);',
+                      '1000.0 * smplh_distance.distance_duration_seconds,\n'
+                      '                   1000.0 * smplh_distance.sch_duration_seconds,\n'
+                      '                   static_cast<unsigned long long>(smplh_distance.sch_pruned_pairs));')
+    return text.replace('static_cast<unsigned long long>(smplh_distance.sch_pruned_pairs));',
+                        'static_cast<unsigned long long>(smplh_distance.sch_pruned_pairs),\n'
+                        '                   smplh_distance.approximate ? "approximate" : "exact");')
+
+
 def install(source):
     source=Path(source); here=Path(__file__).parent
     cpp=source/'src/mj_sim.cpp'; header=source/'src/mj_sim_impl.h'
     c=cpp.read_text(); h=header.read_text()
+    # Upgrade existing latency readouts as well as fresh bridge installations.
+    c=c.replace('query %.1f ms",', 'query %.1f ms | pairs %llu/%llu",')
+    c=c.replace('1000.0 * smplh_distance.worker_duration_seconds);',
+                '1000.0 * smplh_distance.worker_duration_seconds,\n'
+                '                   static_cast<unsigned long long>(smplh_distance.queried_pairs),\n'
+                '                   static_cast<unsigned long long>(smplh_distance.total_pairs));')
     shutil.copyfile(here/'SmplhDistanceSnapshot.h', source/'src/SmplhDistanceSnapshot.h')
     shutil.copyfile(here/'SmplhDistanceWorker.h', source/'src/SmplhDistanceWorker.h')
     if 'smplh_bridge_.update' in c:
@@ -22,10 +48,12 @@ def install(source):
                         '    ImGui::Text("Wallclock time: %.2fs", wallclock);\n'
                         '    const auto smplh_distance = smplh_bridge_.snapshot();\n'
                         '    if(smplh_distance.ready)\n'
-                        '      ImGui::Text("SMPL-H sample %llu | age %.1f ms | query %.1f ms",\n'
+                        '      ImGui::Text("SMPL-H sample %llu | age %.1f ms | query %.1f ms | pairs %llu/%llu",\n'
                         '                   static_cast<unsigned long long>(smplh_distance.sequence),\n'
                         '                   1000.0 * (data->time - smplh_distance.sample_simulation_time),\n'
-                        '                   1000.0 * smplh_distance.worker_duration_seconds);\n'
+                        '                   1000.0 * smplh_distance.worker_duration_seconds,\n'
+                        '                   static_cast<unsigned long long>(smplh_distance.queried_pairs),\n'
+                        '                   static_cast<unsigned long long>(smplh_distance.total_pairs));\n'
                         '    else ImGui::Text("SMPL-H distance sample: waiting");')
         if 'smplh_store.assign<mc_mujoco::SmplhDistanceSnapshot>' not in c:
             c=c.replace('    if(!controller->run())',
@@ -38,19 +66,29 @@ def install(source):
                         '      if(!smplh_paused_store.has("SMPLH::DistanceSnapshot")) smplh_paused_store.make<mc_mujoco::SmplhDistanceSnapshot>("SMPLH::DistanceSnapshot");\n'
                         '      smplh_paused_store.assign<mc_mujoco::SmplhDistanceSnapshot>("SMPLH::DistanceSnapshot", smplh_bridge_.snapshot());\n'
                         '      controller->run();')
-            cpp.write_text(c)
-        cpp.write_text(c)
+            cpp.write_text(timing_readout(c))
+        cpp.write_text(timing_readout(c))
         cmake=source/'src/CMakeLists.txt'; text=cmake.read_text()
         text=text.replace('install(FILES mj_sim.h mj_configuration.h DESTINATION include/mc_mujoco)',
                           'install(FILES mj_sim.h mj_configuration.h SmplhDistanceSnapshot.h DESTINATION include/mc_mujoco)')
         text=text.replace('    mj_sim_impl.h\n', '    mj_sim_impl.h\n    SmplhDistanceSnapshot.h\n    SmplhDistanceWorker.h\n')
-        if 'target_link_libraries(mc_mujoco_lib PRIVATE fcl)' not in text:
-            text=text.replace('if(uitools_is_platform_ui_adapter)',
-                              'target_link_libraries(mc_mujoco_lib PRIVATE fcl)\nif(uitools_is_platform_ui_adapter)')
+        if 'target_link_libraries(mc_mujoco_lib PRIVATE fcl ${SCH_CORE_LIBRARIES})' not in text:
+            if 'target_link_libraries(mc_mujoco_lib PRIVATE fcl)' in text:
+                text=text.replace('target_link_libraries(mc_mujoco_lib PRIVATE fcl)',
+                                  'target_link_libraries(mc_mujoco_lib PRIVATE fcl ${SCH_CORE_LIBRARIES})')
+            else:
+                text=text.replace('if(uitools_is_platform_ui_adapter)',
+                                  'target_link_libraries(mc_mujoco_lib PRIVATE fcl ${SCH_CORE_LIBRARIES})\nif(uitools_is_platform_ui_adapter)')
+        if 'target_include_directories(mc_mujoco_lib PRIVATE ${SCH_CORE_INCLUDE_DIRS})' not in text:
+            text=text.replace('target_link_libraries(mc_mujoco_lib PRIVATE fcl ${SCH_CORE_LIBRARIES})',
+                              'target_include_directories(mc_mujoco_lib PRIVATE ${SCH_CORE_INCLUDE_DIRS})\n'
+                              'target_link_libraries(mc_mujoco_lib PRIVATE fcl ${SCH_CORE_LIBRARIES})')
         cmake.write_text(text)
         rootCmake=source/'CMakeLists.txt'; rootText=rootCmake.read_text()
         if 'find_package(fcl REQUIRED)' not in rootText:
             rootText=rootText.replace('find_package(mc_rtc REQUIRED)', 'find_package(mc_rtc REQUIRED)\nfind_package(fcl REQUIRED)')
+        if 'find_package(sch-core REQUIRED)' not in rootText:
+            rootText=rootText.replace('find_package(fcl REQUIRED)', 'find_package(fcl REQUIRED)\nfind_package(sch-core REQUIRED)')
         rootCmake.write_text(rootText); return
     replacements=[
         ('  mj_forward(model, data);','  mj_forward(model, data);\n  smplh_bridge_.update(model, data);'),
@@ -70,10 +108,12 @@ def install(source):
                 '    ImGui::Text("Wallclock time: %.2fs", wallclock);\n'
                 '    const auto smplh_distance = smplh_bridge_.snapshot();\n'
                 '    if(smplh_distance.ready)\n'
-                '      ImGui::Text("SMPL-H sample %llu | age %.1f ms | query %.1f ms",\n'
+                '      ImGui::Text("SMPL-H sample %llu | age %.1f ms | query %.1f ms | pairs %llu/%llu",\n'
                 '                   static_cast<unsigned long long>(smplh_distance.sequence),\n'
                 '                   1000.0 * (data->time - smplh_distance.sample_simulation_time),\n'
-                '                   1000.0 * smplh_distance.worker_duration_seconds);\n'
+                '                   1000.0 * smplh_distance.worker_duration_seconds,\n'
+                '                   static_cast<unsigned long long>(smplh_distance.queried_pairs),\n'
+                '                   static_cast<unsigned long long>(smplh_distance.total_pairs));\n'
                 '    else ImGui::Text("SMPL-H distance sample: waiting");')
     c=c.replace('    if(!controller->run())',
                 '    auto & smplh_store = controller->controller().datastore();\n'
@@ -92,7 +132,7 @@ def install(source):
     if not match: raise RuntimeError('Cannot locate MjSimImpl definition')
     h=h[:match.end()]+'\n  SmplhBridge smplh_bridge_;\n'+h[match.end():]
     h='#include "SmplhBridge.h"\n'+h
-    cpp.write_text(c); header.write_text(h)
+    cpp.write_text(timing_readout(c)); header.write_text(h)
     shutil.copyfile(here/'NativeSmplhPlayback.h',source/'src/SmplhBridge.h')
     shutil.copyfile(here/'SmplhDistanceWorker.h',source/'src/SmplhDistanceWorker.h')
     cmake=source/'src/CMakeLists.txt'
@@ -100,13 +140,23 @@ def install(source):
     text=text.replace('install(FILES mj_sim.h mj_configuration.h DESTINATION include/mc_mujoco)',
                       'install(FILES mj_sim.h mj_configuration.h SmplhDistanceSnapshot.h DESTINATION include/mc_mujoco)')
     text=text.replace('    mj_sim_impl.h\n', '    mj_sim_impl.h\n    SmplhDistanceSnapshot.h\n    SmplhDistanceWorker.h\n')
-    if 'target_link_libraries(mc_mujoco_lib PRIVATE fcl)' not in text:
-        text=text.replace('if(uitools_is_platform_ui_adapter)',
-                          'target_link_libraries(mc_mujoco_lib PRIVATE fcl)\nif(uitools_is_platform_ui_adapter)')
+    if 'target_link_libraries(mc_mujoco_lib PRIVATE fcl ${SCH_CORE_LIBRARIES})' not in text:
+        if 'target_link_libraries(mc_mujoco_lib PRIVATE fcl)' in text:
+            text=text.replace('target_link_libraries(mc_mujoco_lib PRIVATE fcl)',
+                              'target_link_libraries(mc_mujoco_lib PRIVATE fcl ${SCH_CORE_LIBRARIES})')
+        else:
+            text=text.replace('if(uitools_is_platform_ui_adapter)',
+                              'target_link_libraries(mc_mujoco_lib PRIVATE fcl ${SCH_CORE_LIBRARIES})\nif(uitools_is_platform_ui_adapter)')
+    if 'target_include_directories(mc_mujoco_lib PRIVATE ${SCH_CORE_INCLUDE_DIRS})' not in text:
+        text=text.replace('target_link_libraries(mc_mujoco_lib PRIVATE fcl ${SCH_CORE_LIBRARIES})',
+                          'target_include_directories(mc_mujoco_lib PRIVATE ${SCH_CORE_INCLUDE_DIRS})\n'
+                          'target_link_libraries(mc_mujoco_lib PRIVATE fcl ${SCH_CORE_LIBRARIES})')
     cmake.write_text(text)
     rootCmake=source/'CMakeLists.txt'; rootText=rootCmake.read_text()
     if 'find_package(fcl REQUIRED)' not in rootText:
         rootText=rootText.replace('find_package(mc_rtc REQUIRED)', 'find_package(mc_rtc REQUIRED)\nfind_package(fcl REQUIRED)')
+    if 'find_package(sch-core REQUIRED)' not in rootText:
+        rootText=rootText.replace('find_package(fcl REQUIRED)', 'find_package(fcl REQUIRED)\nfind_package(sch-core REQUIRED)')
     rootCmake.write_text(rootText)
 
 if __name__=='__main__':

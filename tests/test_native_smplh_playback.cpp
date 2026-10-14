@@ -9,6 +9,7 @@
 int main(int argc, char ** argv)
 {
   if(argc != 2) return 2;
+  setenv("SMPLH_DISTANCE_MODE", "fcl", 1);
   char error[1024] = {};
   mjModel * model = mj_loadXML(argv[1], nullptr, error, sizeof(error));
   if(!model) { std::cerr << error << '\n'; return 3; }

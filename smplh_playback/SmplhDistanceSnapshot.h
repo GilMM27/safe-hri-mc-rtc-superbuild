@@ -27,10 +27,18 @@ struct SmplhRegionDistance
 struct SmplhDistanceSnapshot
 {
   bool ready = false;
+  bool approximate = false;
   std::uint64_t sequence = 0;
   std::uint32_t motion_frame = 0;
   double sample_simulation_time = 0.0;
   double worker_duration_seconds = 0.0;
+  std::uint64_t queried_pairs = 0;
+  std::uint64_t total_pairs = 0;
+  std::uint64_t sch_pruned_pairs = 0;
+  double preparation_duration_seconds = 0.0;
+  double sch_duration_seconds = 0.0;
+  double collision_duration_seconds = 0.0;
+  double distance_duration_seconds = 0.0;
   std::string error;
   std::vector<SmplhRegionDistance> regions;
 };
