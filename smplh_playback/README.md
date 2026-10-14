@@ -40,9 +40,9 @@ Set paths for one sequence and prepare it once. The example translation places
 the human beside Kinova; adjust it for your scene. This creates a large cache.
 
 ```sh
-export SMPLH_MODEL="$PWD/datasets/smplh/SMPLH_MALE.pkl"
-export AMASS_SEQUENCE="$PWD/datasets/CMU/02/02_02_poses.npz"
-export SMPLH_CACHE="$PWD/datasets/smplh_cache/cmu_02_02"
+export SMPLH_MODEL="$PWD/datasets/smplh/<model>.pkl" # try SMPLH_MALE
+export AMASS_SEQUENCE="$PWD/datasets/CMU/<subject>/<trial>.npz" # try 01/01_01_poses
+export SMPLH_CACHE="$PWD/datasets/smplh_cache/<name>" # try cmu_01_01
 
 ~/.venvs/smplh-playback/bin/python -m smplh_playback.prepare \
   --output "$SMPLH_CACHE" --translation 1.2 0 0
@@ -60,12 +60,12 @@ Enable the native playback bridge and rebuild. The root README covers the
 superbuild prerequisites and Kinova installation.
 
 ```sh
-cmake --preset relwithdebinfo -DWITH_SMPLH_PLAYBACK=ON -DWITH_Kinova=ON
-cmake --build --preset relwithdebinfo
+cmake --preset relwithdebinfo -DWITH_SMPLH_PLAYBACK=ON -DWITH_Kinova=ON # aka mc_superbuild_config & mc_setup
+cmake --build --preset relwithdebinfo # aka mc_build
 source ~/workspace/install/setup_mc_rtc.sh
 ```
 
-Create or edit `~/.config/mc_rtc/mc_rtc.yaml`:
+Create or edit `~/.config/mc_rtc/mc_rtc.yaml` aka mc_config:
 
 ```yaml
 MainRobot: Kinova
@@ -81,7 +81,7 @@ already have a compatible Kinova controller, use its name under `Enabled`.
 
 ## 4. Add the human to the MuJoCo scene
 
-Create `~/.config/mc_rtc/mc_mujoco/mc_mujoco.yaml` with the human object, or add
+Create `~/.config/mc_rtc/mc_mujoco/mc_mujoco.yaml` aka mc_mujoco_config with the human object, or add
 `human` to your existing `objects` map:
 
 ```yaml
@@ -111,7 +111,7 @@ the motion to repeat.
 
 ```sh
 source ~/workspace/install/setup_mc_rtc.sh
-export SMPLH_CACHE="$PWD/datasets/smplh_cache/cmu_02_02"
+export SMPLH_CACHE="$PWD/datasets/smplh_cache/<name>"
 export SMPLH_LOOP=1
 mc_mujoco --sync
 ```

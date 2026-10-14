@@ -1,19 +1,4 @@
-# safe-rl-qp-mc-rtc-superbuild
-
-Acc-CBF-QP was introduced in:
-
-> **Safe Execution of RL Policies via Acceleration-based CBF-QP Constraint Enforcement for Real-World Robotic Deployments**
-> Bastien Muraccioli, Alice Cariou, Pierre-Alexandre Leziart, Mathieu Celerier, Arnaud Demont, Gentiane Venture, Mehdi Benallegue
-> IROS 2026 — [Paper](https://hal.science/hal-05362571) · [Project page](https://safe-rl-qp.github.io/)
-
-Part of the Acc-CBF-QP ecosystem: [paper implementation](https://github.com/safe-rl-qp/mc-safe-rl-qp) · superbuild (this repo) · [controller template](https://github.com/bastien-muraccioli/new-rl-qp-controller) · [community controllers](https://github.com/safe-rl-qp/awesome-safe-rl-qp)
-
-[![CI](https://github.com/safe-rl-qp/safe-rl-qp-mc-rtc-superbuild/actions/workflows/ubuntu24-install-test.yml/badge.svg)](https://github.com/safe-rl-qp/safe-rl-qp-mc-rtc-superbuild/actions/workflows/ubuntu24-install-test.yml)
-[![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04-E95420)](https://github.com/safe-rl-qp/safe-rl-qp-mc-rtc-superbuild#installation)
-[![Project Page](https://img.shields.io/badge/Project_Page-Visit-blue.svg)](https://safe-rl-qp.github.io/)
-[![PDF](https://img.shields.io/badge/PDF-arXiv-b31b1b.svg)](https://arxiv.org/abs/2607.14488)
-[![Award](https://img.shields.io/badge/IEEE%20IES-SYPA%20Award-gold)](https://2026.ieee-iros.org/attend/ies-sypa/)
-[![Watch the video](https://img.shields.io/badge/YouTube-IROS%202026%20Introduction-red?logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=MPlcEFUSASg)
+# safe-hri-mc-rtc-superbuild
 
 ## Contents
 
@@ -80,6 +65,7 @@ git config --global user.email "your.email@provider.com"
 Run the superbuild from the terminal, or use VS Code's "CMake Tools" extension to select your desired build preset.
 
 By default, the presets will:
+
 - clone all projects into `~/workspace/src`
 - build all projects into `~/workspace/build/`
 - install all projects into `~/workspace/install`
@@ -126,6 +112,9 @@ This file is generated after the first configuration of the superbuild (the step
 You can also add the following aliases to your `.bashrc` to simplify using the framework:
 
 ```bash
+# Setup the superbuild
+alias mc_setup='cd ~/workspace/safe-rl-qp-mc-rtc-superbuild; cmake --preset relwithdebinfo'
+
 # Run the superbuild
 alias mc_build='cd ~/workspace/safe-rl-qp-mc-rtc-superbuild; cmake --build --preset relwithdebinfo'
 
@@ -138,8 +127,14 @@ alias mc_update='cd ~/workspace/build/superbuild; cmake --build . --config RelWi
 # Open the mc_rtc rviz interface
 alias mc_rviz="ros2 launch mc_rtc_ticker display.launch"
 
-# Configure mc_rtc: robot and controller selection (replace gnome-text-editor with your preferred text editor)
+# Configure mc_rtc: robot and controller selection (you may replace with your preferred text editor)
 alias mc_config="gnome-text-editor ~/.config/mc_rtc/mc_rtc.yaml &"
+
+# Configure mc_mujoco: adding objects
+alias mc_mujoco_config="~/.config/mc_rtc/mc_mujoco/mc_mujoco.yaml &"
+
+# Source automatically for new terminals
+source ~/workspace/install/setup_mc_rtc.sh
 ```
 
 When you're done editing your `.bashrc`, don't forget to source it or open a fresh terminal.
@@ -155,9 +150,9 @@ mc_config
 Then add the following:
 
 ```yaml
-MainRobot: H1               # Robot Name
-Enabled: RLController        # Controller Name
-Timestep: 0.0025             # Controller timestep
+MainRobot: H1 # Robot Name
+Enabled: RLController # Controller Name
+Timestep: 0.0025 # Controller timestep
 LogPolicy: threaded
 ```
 
