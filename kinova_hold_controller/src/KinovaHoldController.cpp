@@ -1,6 +1,5 @@
 #include "KinovaHoldController.h"
 
-#include <mc_rtc/gui/Arrow.h>
 #include <mc_rtc/gui/Label.h>
 
 #include <array>
@@ -37,19 +36,10 @@ KinovaHoldController::KinovaHoldController(mc_rbdyn::RobotModulePtr rm,
                        {"joint_7", {1.57}}});
   postureTask->stiffness(1.0);
 
-  mc_rtc::gui::ArrowConfig closestPointsConfig(mc_rtc::gui::Color(0.1, 0.8, 1.0));
-  closestPointsConfig.scale = 0.0008;
-  closestPointsConfig.shaft_diam = 0.008;
-  closestPointsConfig.head_diam = 0.018;
-  closestPointsConfig.head_len = 0.03;
   for(const auto * region : regions)
   {
     const std::string name(region);
     gui()->addElement({"SMPL-H distances"}, mc_rtc::gui::Label(name, [this, name]() { return regionStatus(name); }));
-    gui()->addElement({"SMPL-H closest points"},
-                      mc_rtc::gui::Arrow(name, closestPointsConfig,
-                                         [this, name]() { return closestPoint(name, false); },
-                                         [this, name]() { return closestPoint(name, true); }));
     logger().addLogEntry("SMPLH_distance_" + name, [this, name]() { return regionDistance(name); });
   }
 
@@ -89,19 +79,6 @@ std::string KinovaHoldController::regionStatus(const std::string & region) const
     return status.str();
   }
   return "Region not present in cache";
-}
-
-Eigen::Vector3d KinovaHoldController::closestPoint(const std::string & region, bool robotPoint) const
-{
-  const auto * snapshot = distanceSnapshot();
-  if(!snapshot) return Eigen::Vector3d::Zero();
-  for(const auto & value : snapshot->regions)
-  {
-    if(value.region != region || !value.closest_points_valid) continue;
-    const auto & point = robotPoint ? value.robot_point : value.human_point;
-    return Eigen::Vector3d(point[0], point[1], point[2]);
-  }
-  return Eigen::Vector3d::Zero();
 }
 
 CONTROLLER_CONSTRUCTOR("KinovaHoldController", KinovaHoldController)

@@ -192,6 +192,8 @@ public:
       const int arrowId = scene->ngeom++;
       mjv_initGeom(&scene->geoms[arrowId], mjGEOM_ARROW, geomSize, origin, identity, arrowColor);
       mjv_connector(&scene->geoms[arrowId], mjGEOM_ARROW, 0.006, human, robot);
+      // The MuJoCo arrow mesh reaches half of the connector's stored length.
+      scene->geoms[arrowId].size[2] *= 2.0f;
       scene->geoms[arrowId].category = mjCAT_DECOR;
       scene->geomorder[arrowId] = arrowId;
     }
