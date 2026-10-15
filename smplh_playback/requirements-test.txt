@@ -1,4 +1,3 @@
-# Optional legacy Python reference tests. Native runtime does not use these.
+# Optional cache preparation and MuJoCo model tests.
 -r requirements.txt
 mujoco==3.5.0
-python-fcl==0.7.0.8
