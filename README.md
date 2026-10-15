@@ -10,36 +10,29 @@
   - [Build](#build)
   - [Config superbuild (adding robots and options)](#config-superbuild-adding-robots-and-options)
   - [Bashrc](#bashrc)
-- [Running a controller](#running-a-controller)
+  - [Running the Kinova Gen3 in MuJoCo](#running-the-kinova-gen3-in-mujoco)
 - [SMPL-H / AMASS human playback](#smpl-h--amass-human-playback)
-- [Adding your own RL-QP controller](#adding-your-own-rl-qp-controller)
-  - [Fork the template](#fork-the-template)
-  - [Add your controller to the superbuild](#add-your-controller-to-the-superbuild)
 - [mc_rtc robots](#mc_rtc-robots)
 - [Contributing and issues](#contributing-and-issues)
 
 ## Overview
 
-This project is based on [mc-rtc-superbuild](https://github.com/mc-rtc/mc-rtc-superbuild): it will clone, update, build, and install all of the dependencies needed to run Acc-CBF-QP.
+This project is based on [mc-rtc-superbuild](https://github.com/mc-rtc/mc-rtc-superbuild): it will clone, update, build, and install all of the dependencies.
 
-At the end of the installation you'll be able to run an example controller for the Unitree H1 with a walking policy in Mujoco. We also give the details needed to create your own controller for your own robot and policy.
-
-You can check the [mc-rtc-superbuild README](https://github.com/mc-rtc/mc-rtc-superbuild) for additional background, but you don't need to read it to run the controller example.
-
-This project was tested on Ubuntu 24.04. We do not officially support other operating systems at the moment.
+Only tested on Ubuntu 24.04. We do not officially support other operating systems at the moment.
 
 ## Installation
 
 ### Fork the superbuild
 
-We recommend having your own superbuild by forking this one — as you add your own controllers and extensions, it's much easier to manage with your own fork rather than working directly off of ours.
+We recommend having your own superbuild by forking this one. As you add your own controllers and extensions, it's much easier to manage with your own fork rather than working directly off of ours.
 
 Create a workspace folder in your home directory and clone your fork into it:
 
 ```bash
 mkdir ~/workspace
 cd ~/workspace
-git clone git@github.com:{GIT_USERNAME}/safe-rl-qp-mc-rtc-superbuild.git
+git clone git@github.com:{GIT_USERNAME}/safe-hri-mc-rtc-superbuild.git
 ```
 
 ### Installing the requirements (bootstrapping)
@@ -48,7 +41,7 @@ You can install the requirements by running our bootstrap script:
 
 ```bash
 cd ~/workspace/
-./safe-rl-qp-mc-rtc-superbuild/utils/bootstrap-linux.sh
+./safe-hri-mc-rtc-superbuild/utils/bootstrap-linux.sh
 ```
 
 ### Git setup
@@ -71,7 +64,7 @@ By default, the presets will:
 - install all projects into `~/workspace/install`
 
 ```bash
-cd ~/workspace/safe-rl-qp-mc-rtc-superbuild
+cd ~/workspace/safe-hri-mc-rtc-superbuild
 # Build all projects
 cmake --preset relwithdebinfo
 cmake --build --preset relwithdebinfo
@@ -85,18 +78,6 @@ To add robots or modify the superbuild options, after your first build you can r
 cd ~/workspace/build/superbuild
 # Configure the superbuild
 ccmake .
-```
-
-Inside the menu, use your keyboard's arrow keys to navigate and Enter to edit an entry. To run the controller example, you'll need to set the `WITH_H1` option to `ON`.
-
-Once done, press `[c]` to Configure, and once configuration is finished, press `[g]` to Generate and update the superbuild. When that's done, press `[q]` to quit.
-
-You can now rebuild the superbuild to install the H1 robot module:
-
-```bash
-cd ~/workspace/safe-rl-qp-mc-rtc-superbuild
-# Build all projects
-cmake --build --preset relwithdebinfo
 ```
 
 ### Bashrc
@@ -113,10 +94,10 @@ You can also add the following aliases to your `.bashrc` to simplify using the f
 
 ```bash
 # Setup the superbuild
-alias mc_setup='cd ~/workspace/safe-rl-qp-mc-rtc-superbuild; cmake --preset relwithdebinfo'
+alias mc_setup='cd ~/workspace/safe-hri-mc-rtc-superbuild; cmake --preset relwithdebinfo'
 
 # Run the superbuild
-alias mc_build='cd ~/workspace/safe-rl-qp-mc-rtc-superbuild; cmake --build --preset relwithdebinfo'
+alias mc_build='cd ~/workspace/safe-hri-mc-rtc-superbuild; cmake --build --preset relwithdebinfo'
 
 # Config the superbuild
 alias mc_superbuild_config="cd ~/workspace/build/superbuild; ccmake ."
@@ -138,38 +119,6 @@ source ~/workspace/install/setup_mc_rtc.sh
 ```
 
 When you're done editing your `.bashrc`, don't forget to source it or open a fresh terminal.
-
-## Running a controller
-
-Use your new `mc_config` alias to create the `mc_rtc.yaml` config file, which tells mc_rtc which controller to run with which robot:
-
-```bash
-mc_config
-```
-
-Then add the following:
-
-```yaml
-MainRobot: H1 # Robot Name
-Enabled: RLController # Controller Name
-Timestep: 0.0025 # Controller timestep
-LogPolicy: threaded
-```
-
-Save the file, then `cd` into the folder containing the policy to run — `mc_mujoco` needs to be run from there, not from an arbitrary directory — and start the controller in Mujoco:
-
-```bash
-cd ~/workspace/src/rl_controller/policy/
-mc_mujoco --sync
-```
-
-In another terminal, you can run this to access the RViz interface (optional with Mujoco):
-
-```bash
-mc_rviz
-```
-
-Congrats — you should now see H1 walking! If you have a gamepad plugged into your PC (such as a DS4 controller), you can control the robot with the joystick.
 
 ### Running the Kinova Gen3 in MuJoCo
 
@@ -234,43 +183,6 @@ surface distances with simplified collision elements. See
 [the playback guide](smplh_playback/README.md) for model/data setup, build
 option, coordinate alignment, launch commands, region definitions, distance
 records, and limitations.
-
-## Adding your own RL-QP controller
-
-### Fork the template
-
-Fork [new-rl-qp-controller](https://github.com/bastien-muraccioli/new-rl-qp-controller) and follow its README. You can also check [awesome-safe-rl-qp](https://github.com/safe-rl-qp/awesome-safe-rl-qp) to see other controllers based on the template for more examples.
-
-### Add your controller to the superbuild
-
-In the superbuild's extension folder, add a CMake file to register your controller (the same approach works for adding mc_rtc plugins, interfaces, or any other mc_rtc project):
-
-```bash
-cd ~/workspace/safe-rl-qp-mc-rtc-superbuild/extensions
-gnome-text-editor {controller name}.cmake
-```
-
-```cmake
-AddProject({controller name}
-  GITHUB {github username}/{controller name}
-  GIT_TAG origin/{branch name}
-  DEPENDS mc_rtc
-)
-```
-
-The `GITHUB` command clones the repo over HTTPS; use `GITHUB_PRIVATE` instead if you want to clone over SSH. Check the [mc-rtc-superbuild README](https://github.com/mc-rtc/mc-rtc-superbuild) for more details.
-
-Then rebuild the superbuild:
-
-```bash
-mc_build
-```
-
-And update your mc_rtc config file with your new controller:
-
-```bash
-mc_config
-```
 
 ## mc_rtc robots
 
