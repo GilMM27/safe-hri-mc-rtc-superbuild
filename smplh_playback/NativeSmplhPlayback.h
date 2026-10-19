@@ -31,6 +31,7 @@ class SmplhBridge
   uint32_t frameCount_ = 0, vertexCount_ = 0, faceCount_ = 0, frame_ = UINT32_MAX;
   double fps_ = 0;
   bool loop_ = false, dirty_ = false, initialized_ = false;
+  int freezeFrame_ = -1;
   std::vector<int> joints_;
   std::vector<std::string> regionNames_;
   std::vector<std::vector<uint32_t>> regionFaceIds_;
@@ -100,9 +101,9 @@ class SmplhBridge
     if(mesh_ < 0 || static_cast<uint32_t>(m->mesh_vertnum[mesh_]) != vertexCount_
        || static_cast<uint32_t>(m->mesh_normalnum[mesh_]) != vertexCount_)
       throw std::runtime_error("SMPL-H mesh topology does not match cache");
-    // Cache vertices are already expressed in world coordinates. MuJoCo's OBJ
-    // compiler recenters mesh assets and stores compensating geom/mesh poses;
-    // clear those transforms so the cache coordinates are not shifted again.
+    // MuJoCo's OBJ compiler recenters mesh assets and stores compensating
+    // geom/mesh poses. Clear those asset transforms while retaining the pose
+    // of the merged body that places the human in the mc_mujoco scene.
     mju_zero(m->geom_pos + 3 * geom, 3);
     mju_zero(m->geom_quat + 4 * geom, 4);
     m->geom_quat[4 * geom] = 1;
@@ -111,6 +112,14 @@ class SmplhBridge
     m->mesh_quat[4 * mesh_] = 1;
     for(int i = 0; i < 52; ++i) joints_.push_back(find(m, mjOBJ_JOINT, i ? "smplh_joint_" + std::to_string(i) : "smplh_root"));
     loop_ = std::getenv("SMPLH_LOOP") && std::string(std::getenv("SMPLH_LOOP")) == "1";
+    if(const char * frozen = std::getenv("SMPLH_FREEZE_FRAME"))
+    {
+      char * end = nullptr;
+      const long value = std::strtol(frozen, &end, 10);
+      if(end == frozen || *end || value < 0 || static_cast<unsigned long>(value) >= frameCount_)
+        throw std::runtime_error("SMPLH_FREEZE_FRAME must be a valid nonnegative cache frame");
+      freezeFrame_ = static_cast<int>(value);
+    }
     const char * prefix = std::getenv("SMPLH_ROBOT_PREFIX");
     const char * groupText = std::getenv("SMPLH_ROBOT_GROUP");
     int group = groupText ? std::atoi(groupText) : 2;
@@ -129,7 +138,8 @@ public:
     if(mapping_ == MAP_FAILED) return;
     if(!std::isfinite(d->time) || d->time < 0) return;
     uint64_t index = static_cast<uint64_t>(std::floor(d->time * fps_ + 1e-9));
-    uint32_t next = loop_ ? index % frameCount_ : static_cast<uint32_t>(std::min<uint64_t>(index, frameCount_ - 1));
+    uint32_t next = freezeFrame_ >= 0 ? static_cast<uint32_t>(freezeFrame_)
+                  : loop_ ? index % frameCount_ : static_cast<uint32_t>(std::min<uint64_t>(index, frameCount_ - 1));
     const float * v = vertices_ + static_cast<size_t>(next) * vertexCount_ * 3;
     if(next != frame_)
     {
@@ -141,6 +151,8 @@ public:
       mju_zero(d->qvel + m->jnt_dofadr[id], nv);
       offset += nq;
     }
+    // Update the merged body's world pose before sampling distances.
+    mj_forward(m, d);
     int va = m->mesh_vertadr[mesh_], na = m->mesh_normaladr[mesh_];
     std::copy(v, v + 3 * vertexCount_, m->mesh_vert + 3 * va);
     std::vector<mjtNum> normals(3ull * vertexCount_, 0);
@@ -155,10 +167,19 @@ public:
     }
     for(uint32_t i=0;i<vertexCount_;++i) mju_normalize3(normals.data()+3*i);
     std::copy(normals.begin(), normals.end(), m->mesh_normal + 3 * na);
-    mj_forward(m,d); frame_=next; dirty_=true;
+    mj_forward(m,d);
+    frame_=next; dirty_=true;
     }
     if(distanceEnabled_ && (++steps_ % distanceEvery_ == 0 || sequence_ == 0))
-      distanceWorker_.submit(++sequence_, next, d->time, v, vertexCount_, d, m, surfaceGeom_);
+    {
+      const bool held = freezeFrame_ >= 0 || (!loop_ && index >= frameCount_ - 1);
+      // Backward material-vertex difference at the cache frame interval. No
+      // future frame is accessed; the first/loop-wrap frame has no estimate.
+      const float * previous = !held && next > 0
+          ? vertices_ + static_cast<size_t>(next - 1) * vertexCount_ * 3 : nullptr;
+      distanceWorker_.submit(++sequence_, next, d->time, v, vertexCount_, previous,
+                             1.0 / fps_, held, d, m, surfaceGeom_);
+    }
   }
   mc_mujoco::SmplhDistanceSnapshot snapshot() const { return distanceWorker_.latest(); }
   void renderDistanceOverlay(mjvScene * scene) const

@@ -62,6 +62,7 @@ public:
 struct SmplhRobotGeom
 {
   std::string name;
+  std::string body;
   std::shared_ptr<SmplhCollisionGeometry> geometry;
   std::unique_ptr<sch::S_Object> sch_geometry;
 };
@@ -70,6 +71,10 @@ struct SmplhRobotPose
 {
   Eigen::Matrix3d rotation = Eigen::Matrix3d::Identity();
   Eigen::Vector3d translation = Eigen::Vector3d::Zero();
+  Eigen::Matrix3d body_rotation = Eigen::Matrix3d::Identity();
+  Eigen::Vector3d body_translation = Eigen::Vector3d::Zero();
+  Eigen::Vector3d body_angular_velocity = Eigen::Vector3d::Zero();
+  Eigen::Vector3d body_linear_velocity = Eigen::Vector3d::Zero();
 };
 
 struct SmplhQueryInput
@@ -78,6 +83,12 @@ struct SmplhQueryInput
   std::uint32_t frame = 0;
   double time = 0;
   std::vector<Eigen::Vector3d> vertices;
+  std::vector<Eigen::Vector3d> vertex_velocities;
+  bool velocity_valid = false;
+  bool frozen = false;
+  std::array<double, 7> robot_joint_positions{};
+  std::array<double, 7> robot_joint_velocities{};
+  bool robot_joints_valid = false;
   std::vector<SmplhRobotPose> robot_poses;
 };
 
@@ -111,6 +122,39 @@ class SmplhDistanceWorker
   SmplhDistanceSnapshot completed_;
   bool stopping_ = false;
   std::thread thread_;
+
+  void decorateWitness(SmplhRegionDistance & candidate, size_t robotIndex,
+                       const Region & region, const SmplhQueryInput & input) const
+  {
+    candidate.robot_body = robots_[robotIndex].body;
+    if(!candidate.closest_points_valid) return;
+    const auto & pose = input.robot_poses[robotIndex];
+    const Eigen::Vector3d robotPoint(candidate.robot_point[0], candidate.robot_point[1], candidate.robot_point[2]);
+    const Eigen::Vector3d local = pose.body_rotation.transpose() * (robotPoint - pose.body_translation);
+    candidate.robot_point_body_local = {local.x(), local.y(), local.z()};
+    const Eigen::Vector3d robotVelocity = pose.body_linear_velocity
+        + pose.body_angular_velocity.cross(robotPoint - pose.body_translation);
+    if(robotVelocity.allFinite())
+    {
+      candidate.robot_velocity = {robotVelocity.x(), robotVelocity.y(), robotVelocity.z()};
+      candidate.robot_velocity_valid = true;
+    }
+    if(!input.velocity_valid || input.vertex_velocities.size() != input.vertices.size()) return;
+    // The selected SCH hull point need not lie on a mesh triangle. Track the
+    // nearest material vertex by its stable mesh ID, never the previous witness.
+    const Eigen::Vector3d humanPoint(candidate.human_point[0], candidate.human_point[1], candidate.human_point[2]);
+    double best = std::numeric_limits<double>::infinity();
+    uint32_t materialVertex = region.vertexIds.front();
+    for(uint32_t vertex : region.vertexIds)
+    {
+      const double squared = (input.vertices[vertex] - humanPoint).squaredNorm();
+      if(squared < best) { best = squared; materialVertex = vertex; }
+    }
+    const auto & velocity = input.vertex_velocities[materialVertex];
+    if(!velocity.allFinite()) return;
+    candidate.human_velocity = {velocity.x(), velocity.y(), velocity.z()};
+    candidate.human_velocity_valid = true;
+  }
 
   static std::shared_ptr<SmplhCollisionGeometry> robotGeometry(const mjModel * m, int id)
   {
@@ -214,7 +258,8 @@ class SmplhDistanceWorker
   }
 
   void queryApproximate(SmplhDistanceSnapshot & snapshot,
-                        const std::vector<std::unique_ptr<fcl::CollisionObjectd>> & robotObjects) const
+                        const std::vector<std::unique_ptr<fcl::CollisionObjectd>> & robotObjects,
+                        const SmplhQueryInput & input) const
   {
     snapshot.approximate = true;
     for(const auto & region : regions_)
@@ -234,6 +279,7 @@ class SmplhDistanceWorker
       bool have = false;
       double bestDistance = std::numeric_limits<double>::infinity();
       SmplhRegionDistance best;
+      size_t bestRobot = robots_.size();
       for(const auto & entry : candidates)
       {
         if(have && entry.bound > bestDistance + 1e-9) break;
@@ -249,7 +295,28 @@ class SmplhDistanceWorker
         candidate.region = region.name;
         candidate.robot_geometry = robot.name;
         if(squared <= 0)
-        { candidate.distance = 0; candidate.intersecting = true; }
+        {
+          // SCH's penetration vector points from the human hull to the robot
+          // geometry. The difference of the overlapping witness points points
+          // the other way, so it cannot be used as the approach direction.
+          sch::Point3 humanPoint, robotPoint;
+          const double penetrationSquared = pair.getClosestPoints(humanPoint, robotPoint);
+          if(!std::isfinite(penetrationSquared))
+            throw std::runtime_error("SCH approximate contact witness query failed");
+          candidate.distance = 0;
+          candidate.intersecting = true;
+          candidate.human_point = {humanPoint.m_x, humanPoint.m_y, humanPoint.m_z};
+          candidate.robot_point = {robotPoint.m_x, robotPoint.m_y, robotPoint.m_z};
+          candidate.closest_points_valid = true;
+          const auto & separation = pair.getVector();
+          Eigen::Vector3d direction(separation.m_x, separation.m_y, separation.m_z);
+          if(direction.allFinite() && direction.norm() > 1e-12)
+          {
+            direction.normalize();
+            candidate.direction = {direction.x(), direction.y(), direction.z()};
+            candidate.direction_valid = true;
+          }
+        }
         else
         {
           candidate.distance = std::sqrt(squared);
@@ -272,11 +339,16 @@ class SmplhDistanceWorker
         }
         snapshot.sch_duration_seconds +=
             std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
-        if(!have || candidate.distance < bestDistance)
-        { have = true; bestDistance = candidate.distance; best = std::move(candidate); }
-        if(bestDistance == 0) break;
+        if(!have || candidate.distance < bestDistance
+           || (candidate.distance == bestDistance && candidate.direction_valid && !best.direction_valid))
+        { have = true; bestDistance = candidate.distance; bestRobot = entry.robot; best = std::move(candidate); }
+        if(bestDistance == 0 && best.direction_valid && best.closest_points_valid) break;
       }
-      if(have) snapshot.regions.push_back(std::move(best));
+      if(have)
+      {
+        decorateWitness(best, bestRobot, region, input);
+        snapshot.regions.push_back(std::move(best));
+      }
     }
   }
 
@@ -324,6 +396,10 @@ class SmplhDistanceWorker
       humanModelFrame_=input.frame;
     }
     snapshot.ready = true; snapshot.sequence = input.sequence; snapshot.motion_frame = input.frame;
+    snapshot.playback_frozen = input.frozen;
+    snapshot.robot_joint_positions = input.robot_joint_positions;
+    snapshot.robot_joint_velocities = input.robot_joint_velocities;
+    snapshot.robot_joints_valid = input.robot_joints_valid;
     snapshot.sample_simulation_time = input.time;
     // Build current-pose robot objects once, rather than once per region.
     std::vector<std::unique_ptr<fcl::CollisionObjectd>> robotObjects;
@@ -348,7 +424,7 @@ class SmplhDistanceWorker
         std::chrono::duration<double>(std::chrono::steady_clock::now()-preparationStart).count();
     if(approximateSch_)
     {
-      queryApproximate(snapshot, robotObjects);
+      queryApproximate(snapshot, robotObjects, input);
       return snapshot;
     }
     for(size_t regionIndex=0; regionIndex<regions_.size(); ++regionIndex)
@@ -383,13 +459,33 @@ class SmplhDistanceWorker
           { ++snapshot.sch_pruned_pairs; continue; }
         }
         ++snapshot.queried_pairs;
-        fcl::CollisionRequestd collisionRequest; fcl::CollisionResultd collisionResult;
+        fcl::CollisionRequestd collisionRequest(1, true);
+        fcl::CollisionResultd collisionResult;
         const auto collisionStart = std::chrono::steady_clock::now();
         bool intersecting = fcl::collide(&human, &object, collisionRequest, collisionResult) > 0;
         snapshot.collision_duration_seconds +=
             std::chrono::duration<double>(std::chrono::steady_clock::now()-collisionStart).count();
         SmplhRegionDistance candidate; candidate.region = region.name; candidate.robot_geometry = robot.name;
-        if(intersecting) { candidate.distance = 0; candidate.intersecting = true; }
+        if(intersecting)
+        {
+          candidate.distance = 0;
+          candidate.intersecting = true;
+          if(collisionResult.numContacts() > 0)
+          {
+            const auto & contact = collisionResult.getContact(0);
+            const Eigen::Vector3d normal = contact.normal;
+            const Eigen::Vector3d position = contact.pos;
+            if(normal.allFinite() && position.allFinite() && normal.norm() > 1e-12)
+            {
+              const Eigen::Vector3d direction = normal.normalized(); // human -> robot
+              candidate.human_point = {position.x(), position.y(), position.z()};
+              candidate.robot_point = candidate.human_point;
+              candidate.closest_points_valid = true;
+              candidate.direction = {direction.x(), direction.y(), direction.z()};
+              candidate.direction_valid = true;
+            }
+          }
+        }
         else
         {
           fcl::DistanceRequestd request(true); fcl::DistanceResultd result;
@@ -410,11 +506,17 @@ class SmplhDistanceWorker
             if(n.norm() > 1e-12) { n.normalize(); candidate.human_normal = {n.x(),n.y(),n.z()}; candidate.human_normal_valid = true; }
           }
         }
-        if(!have || candidate.distance < bestDistance || (candidate.distance == bestDistance && i < bestIndex))
+        if(!have || candidate.distance < bestDistance
+           || (candidate.distance == bestDistance && candidate.direction_valid && !best.direction_valid)
+           || (candidate.distance == bestDistance && candidate.direction_valid == best.direction_valid && i < bestIndex))
         { have=true; bestDistance=candidate.distance; bestIndex=i; best=std::move(candidate); }
-        if(bestDistance == 0) break;
+        if(bestDistance == 0 && best.direction_valid && best.closest_points_valid) break;
       }
-      if(have) snapshot.regions.push_back(std::move(best));
+      if(have)
+      {
+        decorateWitness(best, bestIndex, region, input);
+        snapshot.regions.push_back(std::move(best));
+      }
     }
     return snapshot;
   }
@@ -495,7 +597,10 @@ public:
       const char * body=mj_id2name(m,mjOBJ_BODY,m->geom_bodyid[i]);
       if(!body || m->geom_group[i]!=group || (!wanted.empty() && std::string(body).compare(0,wanted.size(),wanted)!=0)) continue;
       const char * geom=mj_id2name(m,mjOBJ_GEOM,i);
-      robots_.push_back({geom?geom:std::to_string(i),robotGeometry(m,i),
+      std::string modelBody(body);
+      if(!wanted.empty() && modelBody.compare(0, wanted.size(), wanted) == 0)
+        modelBody.erase(0, wanted.size());
+      robots_.push_back({geom?geom:std::to_string(i),modelBody,robotGeometry(m,i),
                          (useSch_ || approximateSch_) ? schRobotGeometry(m,i) : nullptr});
       if(approximateSch_ && !robots_.back().sch_geometry)
         throw std::runtime_error("SCH approximate mode does not support selected robot geom");
@@ -505,16 +610,42 @@ public:
     thread_=std::thread(&SmplhDistanceWorker::run,this);
   }
   void submit(std::uint64_t seq,uint32_t frame,double time,const float * vertices,uint32_t nvertices,
+              const float * previousVertices,double framePeriod,bool frozen,
               const mjData * data,const mjModel * model,int humanSurfaceGeom)
   {
     auto input=std::make_unique<SmplhQueryInput>(); input->sequence=seq; input->frame=frame; input->time=time;
+    input->frozen = frozen;
+    input->robot_joints_valid = true;
+    for(int joint = 1; joint <= 7; ++joint)
+    {
+      const std::string name = "kinova_joint_" + std::to_string(joint);
+      const int id = mj_name2id(model, mjOBJ_JOINT, name.c_str());
+      if(id < 0 || model->jnt_type[id] != mjJNT_HINGE)
+      { input->robot_joints_valid = false; break; }
+      input->robot_joint_positions[joint-1] = data->qpos[model->jnt_qposadr[id]];
+      input->robot_joint_velocities[joint-1] = data->qvel[model->jnt_dofadr[id]];
+    }
+    // Apply the same merged-scene geom pose used by the rendered mesh and
+    // contact proxies. The cache vertices are local to this rendered geom.
     Eigen::Map<const Eigen::Matrix<double,3,3,Eigen::RowMajor>> humanRotation(data->geom_xmat+9*humanSurfaceGeom);
     Eigen::Map<const Eigen::Vector3d> humanTranslation(data->geom_xpos+3*humanSurfaceGeom);
     input->vertices.reserve(nvertices);
+    input->velocity_valid = frozen || (previousVertices && std::isfinite(framePeriod) && framePeriod > 0);
+    if(input->velocity_valid) input->vertex_velocities.reserve(nvertices);
     for(uint32_t i=0;i<nvertices;++i)
     {
-      Eigen::Vector3d local(vertices[3*i],vertices[3*i+1],vertices[3*i+2]);
+      const Eigen::Vector3d local(vertices[3*i],vertices[3*i+1],vertices[3*i+2]);
       input->vertices.emplace_back(humanRotation * local + humanTranslation);
+      if(input->velocity_valid)
+      {
+        Eigen::Vector3d velocity = Eigen::Vector3d::Zero();
+        if(!frozen)
+        {
+          const Eigen::Vector3d previous(previousVertices[3*i],previousVertices[3*i+1],previousVertices[3*i+2]);
+          velocity = humanRotation * (local - previous) / framePeriod;
+        }
+        input->vertex_velocities.push_back(velocity);
+      }
     }
     input->robot_poses.reserve(robots_.size());
     for(size_t j=0;j<robots_.size();++j)
@@ -522,6 +653,13 @@ public:
       int id=robotIds_[j]; SmplhRobotPose pose;
       Eigen::Map<const Eigen::Matrix<double,3,3,Eigen::RowMajor>> rotation(data->geom_xmat+9*id);
       pose.rotation=rotation; pose.translation=Eigen::Map<const Eigen::Vector3d>(data->geom_xpos+3*id);
+      const int bodyId = model->geom_bodyid[id];
+      pose.body_rotation = Eigen::Map<const Eigen::Matrix<double,3,3,Eigen::RowMajor>>(data->xmat+9*bodyId);
+      pose.body_translation = Eigen::Map<const Eigen::Vector3d>(data->xpos+3*bodyId);
+      mjtNum bodyVelocity[6];
+      mj_objectVelocity(model, data, mjOBJ_BODY, bodyId, bodyVelocity, 0);
+      pose.body_angular_velocity = Eigen::Vector3d(bodyVelocity[0],bodyVelocity[1],bodyVelocity[2]);
+      pose.body_linear_velocity = Eigen::Vector3d(bodyVelocity[3],bodyVelocity[4],bodyVelocity[5]);
       input->robot_poses.push_back(pose);
     }
     {std::lock_guard<std::mutex> lock(mutex_); pending_=std::move(input);} cv_.notify_one();
