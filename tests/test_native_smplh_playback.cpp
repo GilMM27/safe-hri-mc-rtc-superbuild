@@ -25,7 +25,7 @@ int main(int argc, char ** argv)
     if(std::abs(model->geom_pos[3*surfaceGeom])+std::abs(model->geom_pos[3*surfaceGeom+1])
        +std::abs(model->geom_pos[3*surfaceGeom+2])+std::abs(model->mesh_pos[3*mesh])
        +std::abs(model->mesh_pos[3*mesh+1])+std::abs(model->mesh_pos[3*mesh+2])>1e-9)
-      throw std::runtime_error("world-space surface received an extra MuJoCo mesh transform");
+      throw std::runtime_error("surface received an extra MuJoCo asset transform");
     float initial_vertex = model->mesh_vert[3 * model->mesh_vertadr[mesh]];
     data->time = 1.0 / 30.0; bridge.update(model, data);
     if(std::abs(data->qpos[0] - initial_x - .004) > 1e-6) throw std::runtime_error("frame did not advance");

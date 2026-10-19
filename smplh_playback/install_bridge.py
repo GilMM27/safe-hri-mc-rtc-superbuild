@@ -24,6 +24,31 @@ def timing_readout(text):
                         '                   smplh_distance.approximate ? "approximate" : "exact");')
 
 
+def contact_force_readout(text):
+    text = text.replace('  mj_step(model, data);\n  mj_forward(model, data);',
+                        '  mj_step(model, data);\n  smplh_bridge_.sampleContactForces(model, data);\n  mj_forward(model, data);')
+    marker = '    smplh_store.assign<mc_mujoco::SmplhDistanceSnapshot>("SMPLH::DistanceSnapshot", smplh_bridge_.snapshot());'
+    if 'SMPLH::ContactForceSnapshot' not in text:
+        text = text.replace(marker, marker + '\n'
+                            '    if(!smplh_store.has("SMPLH::ContactForceSnapshot")) smplh_store.make<mc_mujoco::SmplhContactForceSnapshot>("SMPLH::ContactForceSnapshot");\n'
+                            '    smplh_store.assign<mc_mujoco::SmplhContactForceSnapshot>("SMPLH::ContactForceSnapshot", smplh_bridge_.contactForces());')
+        paused = '      smplh_paused_store.assign<mc_mujoco::SmplhDistanceSnapshot>("SMPLH::DistanceSnapshot", smplh_bridge_.snapshot());'
+        text = text.replace(paused, paused + '\n'
+                            '      if(!smplh_paused_store.has("SMPLH::ContactForceSnapshot")) smplh_paused_store.make<mc_mujoco::SmplhContactForceSnapshot>("SMPLH::ContactForceSnapshot");\n'
+                            '      smplh_paused_store.assign<mc_mujoco::SmplhContactForceSnapshot>("SMPLH::ContactForceSnapshot", smplh_bridge_.contactForces());')
+    if 'SMPL-H contact peak:' not in text:
+        text = text.replace('    else ImGui::Text("SMPL-H distance sample: waiting");',
+                            '    else ImGui::Text("SMPL-H distance sample: waiting");\n'
+                            '    const auto smplh_contact = smplh_bridge_.contactForces();\n'
+                            '    if(smplh_contact.ready)\n'
+                            '      for(const auto & region : smplh_contact.regions)\n'
+                            '        if(region.peak_normal_force_n > 0)\n'
+                            '          ImGui::Text("SMPL-H contact peak: %s %.1f N (now %.1f N, %u contacts)",\n'
+                            '                      region.region.c_str(), region.peak_normal_force_n,\n'
+                            '                      region.normal_force_n, region.contacts);')
+    return text
+
+
 def install(source):
     source=Path(source); here=Path(__file__).parent
     cpp=source/'src/mj_sim.cpp'; header=source/'src/mj_sim_impl.h'
@@ -66,8 +91,8 @@ def install(source):
                         '      if(!smplh_paused_store.has("SMPLH::DistanceSnapshot")) smplh_paused_store.make<mc_mujoco::SmplhDistanceSnapshot>("SMPLH::DistanceSnapshot");\n'
                         '      smplh_paused_store.assign<mc_mujoco::SmplhDistanceSnapshot>("SMPLH::DistanceSnapshot", smplh_bridge_.snapshot());\n'
                         '      controller->run();')
-            cpp.write_text(timing_readout(c))
-        cpp.write_text(timing_readout(c))
+            cpp.write_text(timing_readout(contact_force_readout(c)))
+        cpp.write_text(timing_readout(contact_force_readout(c)))
         cmake=source/'src/CMakeLists.txt'; text=cmake.read_text()
         text=text.replace('install(FILES mj_sim.h mj_configuration.h DESTINATION include/mc_mujoco)',
                           'install(FILES mj_sim.h mj_configuration.h SmplhDistanceSnapshot.h DESTINATION include/mc_mujoco)')
@@ -132,7 +157,7 @@ def install(source):
     if not match: raise RuntimeError('Cannot locate MjSimImpl definition')
     h=h[:match.end()]+'\n  SmplhBridge smplh_bridge_;\n'+h[match.end():]
     h='#include "SmplhBridge.h"\n'+h
-    cpp.write_text(timing_readout(c)); header.write_text(h)
+    cpp.write_text(timing_readout(contact_force_readout(c))); header.write_text(h)
     shutil.copyfile(here/'NativeSmplhPlayback.h',source/'src/SmplhBridge.h')
     shutil.copyfile(here/'SmplhDistanceWorker.h',source/'src/SmplhDistanceWorker.h')
     cmake=source/'src/CMakeLists.txt'

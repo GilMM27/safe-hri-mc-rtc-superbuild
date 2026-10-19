@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -31,7 +32,12 @@ class SmplhBridge
   uint32_t frameCount_ = 0, vertexCount_ = 0, faceCount_ = 0, frame_ = UINT32_MAX;
   double fps_ = 0;
   bool loop_ = false, dirty_ = false, initialized_ = false;
+  int freezeFrame_ = -1;
   std::vector<int> joints_;
+  struct ContactProxy { int geom, mocap; uint32_t vertex; size_t region; };
+  std::vector<ContactProxy> contactProxies_;
+  std::vector<int> contactRegionByGeom_;
+  mc_mujoco::SmplhContactForceSnapshot contactForces_;
   std::vector<std::string> regionNames_;
   std::vector<std::vector<uint32_t>> regionFaceIds_;
   mc_mujoco::SmplhDistanceWorker distanceWorker_;
@@ -100,9 +106,9 @@ class SmplhBridge
     if(mesh_ < 0 || static_cast<uint32_t>(m->mesh_vertnum[mesh_]) != vertexCount_
        || static_cast<uint32_t>(m->mesh_normalnum[mesh_]) != vertexCount_)
       throw std::runtime_error("SMPL-H mesh topology does not match cache");
-    // Cache vertices are already expressed in world coordinates. MuJoCo's OBJ
-    // compiler recenters mesh assets and stores compensating geom/mesh poses;
-    // clear those transforms so the cache coordinates are not shifted again.
+    // MuJoCo's OBJ compiler recenters mesh assets and stores compensating
+    // geom/mesh poses. Clear those asset transforms while retaining the pose
+    // of the merged body that places the human in the mc_mujoco scene.
     mju_zero(m->geom_pos + 3 * geom, 3);
     mju_zero(m->geom_quat + 4 * geom, 4);
     m->geom_quat[4 * geom] = 1;
@@ -110,7 +116,43 @@ class SmplhBridge
     mju_zero(m->mesh_quat + 4 * mesh_, 4);
     m->mesh_quat[4 * mesh_] = 1;
     for(int i = 0; i < 52; ++i) joints_.push_back(find(m, mjOBJ_JOINT, i ? "smplh_joint_" + std::to_string(i) : "smplh_root"));
+    contactRegionByGeom_.assign(m->ngeom, -1);
+    for(int geom = 0; geom < m->ngeom; ++geom)
+    {
+      const char * raw = mj_id2name(m, mjOBJ_GEOM, geom);
+      if(!raw) continue;
+      const std::string name(raw), marker = "smplh_contact_";
+      const auto start = name.find(marker);
+      if(start == std::string::npos) continue;
+      const auto vertexSep = name.rfind("_v");
+      if(vertexSep == std::string::npos || vertexSep <= start + marker.size())
+        throw std::runtime_error("Invalid SMPL-H contact geom name: " + name);
+      const std::string region = name.substr(start + marker.size(), vertexSep - start - marker.size());
+      const auto vertex = std::stoul(name.substr(vertexSep + 2));
+      if(vertex >= vertexCount_) throw std::runtime_error("Invalid SMPL-H contact vertex index");
+      auto it = std::find(regionNames_.begin(), regionNames_.end(), region);
+      if(it == regionNames_.end()) throw std::runtime_error("Unknown SMPL-H contact region: " + region);
+      const int mocap = m->body_mocapid[m->geom_bodyid[geom]];
+      if(mocap < 0) throw std::runtime_error("SMPL-H contact geom must belong to mocap body");
+      const size_t index = static_cast<size_t>(it - regionNames_.begin());
+      contactProxies_.push_back({geom, mocap, static_cast<uint32_t>(vertex), index});
+      contactRegionByGeom_[geom] = static_cast<int>(index);
+    }
+    if(!contactProxies_.empty())
+    {
+      contactForces_.ready = true;
+      for(const auto & region : regionNames_)
+        contactForces_.regions.push_back({region, 0.0, 0.0, 0});
+    }
     loop_ = std::getenv("SMPLH_LOOP") && std::string(std::getenv("SMPLH_LOOP")) == "1";
+    if(const char * frozen = std::getenv("SMPLH_FREEZE_FRAME"))
+    {
+      char * end = nullptr;
+      const long value = std::strtol(frozen, &end, 10);
+      if(end == frozen || *end || value < 0 || static_cast<unsigned long>(value) >= frameCount_)
+        throw std::runtime_error("SMPLH_FREEZE_FRAME must be a valid nonnegative cache frame");
+      freezeFrame_ = static_cast<int>(value);
+    }
     const char * prefix = std::getenv("SMPLH_ROBOT_PREFIX");
     const char * groupText = std::getenv("SMPLH_ROBOT_GROUP");
     int group = groupText ? std::atoi(groupText) : 2;
@@ -129,7 +171,8 @@ public:
     if(mapping_ == MAP_FAILED) return;
     if(!std::isfinite(d->time) || d->time < 0) return;
     uint64_t index = static_cast<uint64_t>(std::floor(d->time * fps_ + 1e-9));
-    uint32_t next = loop_ ? index % frameCount_ : static_cast<uint32_t>(std::min<uint64_t>(index, frameCount_ - 1));
+    uint32_t next = freezeFrame_ >= 0 ? static_cast<uint32_t>(freezeFrame_)
+                  : loop_ ? index % frameCount_ : static_cast<uint32_t>(std::min<uint64_t>(index, frameCount_ - 1));
     const float * v = vertices_ + static_cast<size_t>(next) * vertexCount_ * 3;
     if(next != frame_)
     {
@@ -141,6 +184,9 @@ public:
       mju_zero(d->qvel + m->jnt_dofadr[id], nv);
       offset += nq;
     }
+    // Update the merged body's world pose before placing contact proxies on
+    // the rendered mesh. Its pose is part of the existing scene placement.
+    mj_forward(m, d);
     int va = m->mesh_vertadr[mesh_], na = m->mesh_normaladr[mesh_];
     std::copy(v, v + 3 * vertexCount_, m->mesh_vert + 3 * va);
     std::vector<mjtNum> normals(3ull * vertexCount_, 0);
@@ -155,12 +201,83 @@ public:
     }
     for(uint32_t i=0;i<vertexCount_;++i) mju_normalize3(normals.data()+3*i);
     std::copy(normals.begin(), normals.end(), m->mesh_normal + 3 * na);
-    mj_forward(m,d); frame_=next; dirty_=true;
+    for(const auto & proxy : contactProxies_)
+    {
+      for(int k = 0; k < 3; ++k)
+      {
+        mjtNum world = d->geom_xpos[3 * surfaceGeom_ + k];
+        for(int j = 0; j < 3; ++j)
+          world += d->geom_xmat[9 * surfaceGeom_ + 3 * k + j] * v[3 * proxy.vertex + j];
+        d->mocap_pos[3 * proxy.mocap + k] = world;
+      }
+    }
+    mj_forward(m,d);
+    frame_=next; dirty_=true;
     }
     if(distanceEnabled_ && (++steps_ % distanceEvery_ == 0 || sequence_ == 0))
-      distanceWorker_.submit(++sequence_, next, d->time, v, vertexCount_, d, m, surfaceGeom_);
+    {
+      if(sequence_ == 0 && std::getenv("SMPLH_DEBUG_COORDS"))
+      {
+        std::fprintf(stderr, "SMPL-H world surface geom %.6f %.6f %.6f, cache vertex0 %.6f %.6f %.6f\n",
+                     d->geom_xpos[3 * surfaceGeom_], d->geom_xpos[3 * surfaceGeom_ + 1],
+                     d->geom_xpos[3 * surfaceGeom_ + 2], v[0], v[1], v[2]);
+        if(!contactProxies_.empty())
+        {
+          const auto & proxy = contactProxies_.front();
+          std::fprintf(stderr, "SMPL-H world first proxy %.6f %.6f %.6f, vertex %u %.6f %.6f %.6f\n",
+                       d->geom_xpos[3 * proxy.geom], d->geom_xpos[3 * proxy.geom + 1],
+                       d->geom_xpos[3 * proxy.geom + 2], proxy.vertex,
+                       v[3 * proxy.vertex], v[3 * proxy.vertex + 1], v[3 * proxy.vertex + 2]);
+        }
+      }
+      const bool held = freezeFrame_ >= 0 || (!loop_ && index >= frameCount_ - 1);
+      // Backward material-vertex difference at the cache frame interval. No
+      // future frame is accessed; the first/loop-wrap frame has no estimate.
+      const float * previous = !held && next > 0
+          ? vertices_ + static_cast<size_t>(next - 1) * vertexCount_ * 3 : nullptr;
+      distanceWorker_.submit(++sequence_, next, d->time, v, vertexCount_, previous,
+                             1.0 / fps_, held, d, m, surfaceGeom_);
+    }
   }
   mc_mujoco::SmplhDistanceSnapshot snapshot() const { return distanceWorker_.latest(); }
+  mc_mujoco::SmplhContactForceSnapshot contactForces() const { return contactForces_; }
+  void sampleContactForces(const mjModel * m, const mjData * d)
+  {
+    if(!contactForces_.ready) return;
+    if(d->time < contactForces_.simulation_time)
+    {
+      contactForces_.steps = 0;
+      for(auto & region : contactForces_.regions) region.peak_normal_force_n = 0.0;
+    }
+    contactForces_.simulation_time = d->time;
+    ++contactForces_.steps;
+    for(auto & region : contactForces_.regions)
+    {
+      region.normal_force_n = 0.0;
+      region.contacts = 0;
+    }
+    for(int i = 0; i < d->ncon; ++i)
+    {
+      const auto & contact = d->contact[i];
+      if(contact.efc_address < 0) continue;
+      const int a = contactRegionByGeom_.at(contact.geom1);
+      const int b = contactRegionByGeom_.at(contact.geom2);
+      if((a < 0) == (b < 0)) continue; // ignore proxy-proxy and unrelated contacts
+      const int other = a >= 0 ? contact.geom2 : contact.geom1;
+      // Kinova collision geoms are unnamed. Their parent bodies carry the
+      // namespace prefix, exactly as in SmplhDistanceWorker::configure.
+      const char * otherName = mj_id2name(m, mjOBJ_BODY, m->geom_bodyid[other]);
+      const std::string robotPrefix = std::getenv("SMPLH_ROBOT_PREFIX") ? std::getenv("SMPLH_ROBOT_PREFIX") : "kinova_";
+      if(!otherName || std::string(otherName).find(robotPrefix) != 0) continue;
+      mjtNum wrench[6];
+      mj_contactForce(m, d, i, wrench);
+      auto & region = contactForces_.regions[static_cast<size_t>(a >= 0 ? a : b)];
+      region.normal_force_n += std::max(0.0, static_cast<double>(wrench[0]));
+      ++region.contacts;
+    }
+    for(auto & region : contactForces_.regions)
+      region.peak_normal_force_n = std::max(region.peak_normal_force_n, region.normal_force_n);
+  }
   void renderDistanceOverlay(mjvScene * scene) const
   {
     if(!distanceEnabled_ || !scene) return;
