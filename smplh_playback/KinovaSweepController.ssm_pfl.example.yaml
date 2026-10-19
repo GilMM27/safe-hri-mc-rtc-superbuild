@@ -1,0 +1,35 @@
+# Simulation-only placeholder values. Replace every regional force/stiffness
+# value with separately verified parameters before interpreting the result.
+Sweep:
+  AmplitudeRad: 0.2
+  SegmentSeconds: 1.0
+  DwellSeconds: 0.25
+  MaxJointSpeedRadS: 0.6
+  PostureStiffness: 25.0
+  AutoStart: false # true for scripted headless validation
+SSMPFL:
+  Enabled: true
+  ConstrainWhileHolding: true # false monitors without QP rows until Start
+  HoldOnConstraintUnavailable: true # false continues the sweep without SSM+PFL rows on invalid samples
+  HumanMode: frozen # moving requires nonfrozen playback and material velocity
+  StoppingTimeSeconds: 0.5 # assumed bound, not measured braking performance
+  MaxSampleAgeSeconds: 0.1
+  MaxModelWitnessErrorM: 0.1
+  MaxActualResidualMps: 0.02 # sampled tracking discrepancy diagnostic threshold
+  MinDirectionalInverseMass: 1.0e-12
+  MinMassEigenvalue: 1.0e-9
+  Regions:
+    head:             {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    torso:            {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    left_upper_arm:   {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    left_forearm:     {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    left_hand:        {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    right_upper_arm:  {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    right_forearm:    {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    right_hand:       {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    left_thigh:       {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    left_lower_leg:   {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    left_foot:        {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    right_thigh:      {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    right_lower_leg: {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    right_foot:       {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}

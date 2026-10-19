@@ -20,7 +20,14 @@ configure_file(
   etc/KinovaHoldController.in.yaml
   ${CMAKE_CURRENT_BINARY_DIR}/etc/KinovaHoldController.yaml
 )
-install(
-  FILES ${CMAKE_CURRENT_BINARY_DIR}/etc/KinovaHoldController.yaml
-  DESTINATION ${MC_CONTROLLER_RUNTIME_INSTALL_PREFIX}/etc
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/etc/KinovaHoldController.yaml
+        DESTINATION ${MC_CONTROLLER_RUNTIME_INSTALL_PREFIX}/etc
+)
+
+configure_file(
+  etc/KinovaSweepController.in.yaml
+  ${CMAKE_CURRENT_BINARY_DIR}/etc/KinovaSweepController.yaml
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/etc/KinovaSweepController.yaml
+        DESTINATION ${MC_CONTROLLER_RUNTIME_INSTALL_PREFIX}/etc
 )
