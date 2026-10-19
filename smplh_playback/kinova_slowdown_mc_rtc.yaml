@@ -1,0 +1,43 @@
+# Demonstration only: intentionally restrictive, uncalibrated SSM+PFL values.
+# Use with kinova_slowdown_mc_mujoco.yaml and frozen drink frame 1359.
+MainRobot: Kinova
+Enabled: KinovaSweepController
+Timestep: 0.002
+LogPolicy: threaded
+Plugins: []
+ClearGlobalPluginPath: true
+GUIServer:
+  Enable: true
+Sweep:
+  AmplitudeRad: -3.0
+  SegmentSeconds: 1.0
+  DwellSeconds: 0.25
+  MaxJointSpeedRadS: 1.0
+  PostureStiffness: 25.0
+  AutoStart: false
+SSMPFL:
+  Enabled: true
+  ConstrainWhileHolding: false
+  HoldOnConstraintUnavailable: true
+  HumanMode: frozen
+  StoppingTimeSeconds: 0.5
+  MaxSampleAgeSeconds: 0.1
+  MaxModelWitnessErrorM: 0.1
+  MaxActualResidualMps: 0.02
+  MinDirectionalInverseMass: 1.0e-12
+  MinMassEigenvalue: 1.0e-9
+  Regions:
+    head:            {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    torso:           {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    left_upper_arm:  {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    left_forearm:    {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    left_hand:       {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    right_upper_arm: {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    right_forearm:   {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    right_hand:      {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    left_thigh:      {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    left_lower_leg:  {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    left_foot:       {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    right_thigh:     {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    right_lower_leg: {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}
+    right_foot:      {ForceMaxN: 20.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.4}

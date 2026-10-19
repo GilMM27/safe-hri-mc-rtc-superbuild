@@ -15,4 +15,5 @@ add_subdirectory(
 
 if(WITH_SMPLH_PLAYBACK)
   add_dependencies(KinovaHoldController mc_mujoco)
+  add_dependencies(KinovaSweepController mc_mujoco)
 endif()
