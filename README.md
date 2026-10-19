@@ -136,12 +136,13 @@ cmake --build --preset relwithdebinfo
 ```
 
 The build installs the Kinova Gen3 model as `kinova` for `mc_mujoco`. Select a controller that is
-compatible with a 7-DoF arm and use a 1 ms timestep:
+compatible with a 7-DoF arm and use a 2 ms controller timestep to match the
+Kinova MuJoCo model's physics step:
 
 ```yaml
 MainRobot: Kinova
 Enabled: YourController
-Timestep: 0.001
+Timestep: 0.002
 LogPolicy: threaded
 ```
 
@@ -166,12 +167,45 @@ does not command a trajectory:
 ```yaml
 MainRobot: Kinova
 Enabled: KinovaHoldController
-Timestep: 0.001
+Timestep: 0.002
 LogPolicy: threaded
 ```
 
 The controller is intentionally limited to the seven base Kinova joints. It is a
 smoke-test controller, not a manipulation controller.
+
+For repeatable motion in MuJoCo, select `KinovaSweepController` instead. It
+holds the starting posture until **Start** is pressed under **Kinova sweep** in
+`mc_rtc_gui`, then rotates `joint_1` between its home angle and `+0.2 rad` using
+one-second smooth segments with quarter-second dwells. **Stop** holds the measured
+posture; pressing **Start** again resumes a new cycle from that posture. Enable
+`GUIServer` in `mc_rtc.yaml` so the buttons are available:
+
+```yaml
+MainRobot: Kinova
+Enabled: KinovaSweepController
+Timestep: 0.002
+GUIServer:
+  Enable: true
+```
+
+Set `Sweep.AmplitudeRad` to a negative value (for example, `-0.2`) to sweep
+`joint_1` toward the other side of home. The waypoint must remain within the
+robot model's joint limits. Adjust `Sweep.SegmentSeconds`, `Sweep.DwellSeconds`, and
+`Sweep.MaxJointSpeedRadS` and `Sweep.PostureStiffness` in
+`~/.config/mc_rtc/controllers/KinovaSweepController.yaml`
+if needed. The installed defaults are in
+`kinova_hold_controller/etc/KinovaSweepController.in.yaml`. The
+controller extends segment time when necessary to respect the configured
+joint reference speed and the robot model's velocity limit. `SegmentSeconds`
+uses simulation time, so a slow MuJoCo run takes longer on the wall clock.
+`PostureStiffness` controls how closely the simulated arm follows the
+reference; the sweep defaults to 25, while the stationary hold controller
+still uses 1. Check the arm's clearance from the table and human for
+your scene before using a changed sweep. It logs the cycle phase (0 hold,
+1 outbound, 2 outbound dwell, 3 return, 4 home dwell), commanded and measured
+joint positions, and the available SMPL-H regional distances. This motion is a
+simulation baseline; it does not implement SSM or PFL.
 
 ## SMPL-H / AMASS human playback
 
