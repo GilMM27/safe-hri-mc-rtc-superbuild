@@ -1,4 +1,4 @@
-# Frozen drink cache, no contact proxies: motion changes come from QP rows.
+# Frozen drink cache: motion changes come from QP rows.
 objects:
   human:
     module: smplh
