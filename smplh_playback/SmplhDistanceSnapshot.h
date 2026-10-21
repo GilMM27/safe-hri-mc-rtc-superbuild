@@ -12,6 +12,7 @@ namespace mc_mujoco
 struct SmplhRegionDistance
 {
   std::string region;
+  std::string link; // joint_1 ... joint_7 in per-link mode
   double distance = 0.0;
   std::array<double, 3> human_point{};
   std::array<double, 3> robot_point{};

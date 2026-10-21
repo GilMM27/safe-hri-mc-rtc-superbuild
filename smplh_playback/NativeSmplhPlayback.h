@@ -12,6 +12,7 @@
 #include <cstring>
 #include <cstdio>
 #include <fstream>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -158,7 +159,9 @@ class SmplhBridge
     int group = groupText ? std::atoi(groupText) : 2;
     distanceEnabled_ = !(std::getenv("SMPLH_DISTANCE_DISABLE")
                          && std::string(std::getenv("SMPLH_DISTANCE_DISABLE")) == "1");
-    if(distanceEnabled_) distanceWorker_.configure(m, regionFaceIds_, regionNames_, faces_, prefix ? prefix : "kinova_", group);
+    if(distanceEnabled_)
+      distanceWorker_.configure(m, regionFaceIds_, regionNames_, faces_, prefix ? prefix : "kinova_", group,
+                                true);
   }
 
 public:
@@ -289,8 +292,17 @@ public:
     const float humanColor[4] = {0.1f, 0.9f, 1.0f, 1.0f};
     const float robotColor[4] = {1.0f, 0.55f, 0.1f, 1.0f};
     const float arrowColor[4] = {0.25f, 1.0f, 0.35f, 1.0f};
+    // Keep one visible arrow per human region; the worker still publishes and
+    // constrains all region/link pairs.
+    std::map<std::string, const mc_mujoco::SmplhRegionDistance *> closest;
     for(const auto & region : distances.regions)
     {
+      auto & chosen = closest[region.region];
+      if(!chosen || region.distance < chosen->distance) chosen = &region;
+    }
+    for(const auto & entry : closest)
+    {
+      const auto & region = *entry.second;
       if(!region.closest_points_valid || scene->ngeom + 3 > scene->maxgeom) continue;
       mjtNum human[3], robot[3];
       for(int axis = 0; axis < 3; ++axis)

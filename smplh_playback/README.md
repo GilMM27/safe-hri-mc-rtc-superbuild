@@ -135,6 +135,9 @@ exact triangle-surface distances, export `SMPLH_DISTANCE_MODE=fcl` before
 launch. The worker requests a distance sample every 25 physics steps by
 default; `SMPLH_DISTANCE_EVERY=1` requests one every step at higher compute
 cost. Distances are logged as `SMPLH_distance_<region>` in meters.
+The worker keeps a closest point for each human-region/Kinova-link pair on the
+seven movable joint links. The fixed base is excluded. The regional display
+and `SMPLH_distance_<region>` log show the minimum across links.
 
 For region definitions, timing details, cache conversion, and SCH/FCL
 tradeoffs, see [distance and cache notes](../doc/smplh-distance.md).

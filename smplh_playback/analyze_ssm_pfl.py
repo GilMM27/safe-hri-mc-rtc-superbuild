@@ -25,6 +25,10 @@ def main():
                      for key in available if key.startswith('SSMPFL_') and key.endswith('_predicted_residual_mps'))
     if not regions:
         parser.error('the log has no SSM+PFL regional diagnostics')
+    pair_rows = sorted(key[:-len('_predicted_residual_mps')]
+                       for key in available if key.startswith('SSMPFLPair_')
+                       and key.endswith('_predicted_residual_mps'))
+    row_keys = pair_rows or [f'SSMPFL_{region}' for region in regions]
     common = ['SSMPFL_active_pairs', 'SSMPFL_fallback', 'SSMPFL_solver_success',
               'SSMPFL_compute_seconds', 'SSMPFL_sample_age_seconds',
               'Kinova_sweep_joint_1_command', 'Kinova_sweep_joint_1_model',
@@ -33,13 +37,13 @@ def main():
     suffixes = ['active', 'closing_mps', 'combined_limit_mps',
                 'predicted_residual_mps', 'actual_residual_mps']
     keys = [key for key in common if key in available]
-    keys += [f'SSMPFL_{region}_{suffix}' for region in regions for suffix in suffixes]
-    uncontrollable_keys = [f'SSMPFL_{region}_uncontrollable' for region in regions]
+    keys += [f'{row}_{suffix}' for row in row_keys for suffix in suffixes]
+    uncontrollable_keys = [f'{row}_uncontrollable' for row in row_keys]
     if all(key in available for key in uncontrollable_keys):
         keys += uncontrollable_keys
     else:
         uncontrollable_keys = []
-    monitor_only_keys = [f'SSMPFL_{region}_monitor_only' for region in regions]
+    monitor_only_keys = [f'{row}_monitor_only' for row in row_keys]
     if all(key in available for key in monitor_only_keys):
         keys += monitor_only_keys
     else:
@@ -52,20 +56,22 @@ def main():
             rows = list(csv.DictReader(stream, delimiter=';'))
     if not rows:
         parser.error('the log has no samples')
-    def measured_regions(row):
+    def measured_pairs(row):
         return (int(row['SSMPFL_active_pairs'])
                 + sum(int(row[key]) for key in uncontrollable_keys)
                 + sum(int(row[key]) for key in monitor_only_keys))
 
-    valid = [row for row in rows if measured_regions(row) == len(regions)]
+    valid = [row for row in rows if measured_pairs(row) == len(row_keys)]
     result = {
-        'samples': len(rows), 'samples_with_all_regions': len(valid),
+        'samples': len(rows), 'samples_with_all_pairs': len(valid),
         'fallback_samples': sum(int(row['SSMPFL_fallback']) for row in rows),
         'solver_failed_samples': sum(not int(row['SSMPFL_solver_success']) for row in rows),
-        'regions': len(regions),
+        'regions': len(regions), 'monitored_pairs': len(row_keys),
         'command_joint1_range_rad': [min(float(row['Kinova_sweep_joint_1_command']) for row in rows),
                                      max(float(row['Kinova_sweep_joint_1_command']) for row in rows)],
     }
+    if not pair_rows:
+        result['samples_with_all_regions'] = len(valid)
     model_key = 'Kinova_sweep_joint_1_model' if 'Kinova_sweep_joint_1_model' in keys else 'Kinova_sweep_joint_1_measured'
     result['model_joint1_range_rad'] = [min(float(row[model_key]) for row in rows),
                                         max(float(row[model_key]) for row in rows)]
@@ -78,11 +84,11 @@ def main():
                              if math.isfinite(float(row['Kinova_sweep_joint_1_simulated_velocity']))]
         if actual_velocities:
             result['sampled_mujoco_joint1_velocity_absmax_rad_s'] = max(map(abs, actual_velocities))
-    observed = [float(row[f'SSMPFL_{region}_actual_residual_mps'])
-                for row in rows for region in regions
-                if int(row[f'SSMPFL_{region}_active']) or
-                (uncontrollable_keys and int(row[f'SSMPFL_{region}_uncontrollable'])) or
-                (monitor_only_keys and int(row[f'SSMPFL_{region}_monitor_only']))]
+    observed = [float(row[f'{name}_actual_residual_mps'])
+                for row in rows for name in row_keys
+                if int(row[f'{name}_active']) or
+                (uncontrollable_keys and int(row[f'{name}_uncontrollable'])) or
+                (monitor_only_keys and int(row[f'{name}_monitor_only']))]
     if uncontrollable_keys:
         result['uncontrollable_pair_rows'] = sum(int(row[key]) for row in rows for key in uncontrollable_keys)
     if monitor_only_keys:
@@ -92,8 +98,8 @@ def main():
                       max_actual_residual_mps=max(observed),
                       actual_violations=sum(value > args.violation_tolerance for value in observed))
     if valid:
-        predicted = [float(row[f'SSMPFL_{region}_predicted_residual_mps'])
-                     for row in valid for region in regions if int(row[f'SSMPFL_{region}_active'])]
+        predicted = [float(row[f'{name}_predicted_residual_mps'])
+                     for row in valid for name in row_keys if int(row[f'{name}_active'])]
         result.update(max_compute_seconds=max(float(row['SSMPFL_compute_seconds']) for row in valid),
                       max_sample_age_seconds=max(float(row['SSMPFL_sample_age_seconds']) for row in valid))
         if predicted:
