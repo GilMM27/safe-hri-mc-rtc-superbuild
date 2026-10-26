@@ -70,7 +70,7 @@ Create or edit `~/.config/mc_rtc/mc_rtc.yaml` aka mc_config:
 ```yaml
 MainRobot: Kinova
 Enabled: KinovaHoldController
-Timestep: 0.002
+Timestep: 0.001
 LogPolicy: threaded
 GUIServer:
   Enable: true

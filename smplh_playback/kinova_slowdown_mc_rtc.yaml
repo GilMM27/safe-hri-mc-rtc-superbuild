@@ -2,7 +2,7 @@
 # Use with kinova_slowdown_mc_mujoco.yaml and frozen drink frame 1359.
 MainRobot: Kinova
 Enabled: KinovaSweepController
-Timestep: 0.002
+Timestep: 0.001
 LogPolicy: threaded
 Plugins: []
 ClearGlobalPluginPath: true
