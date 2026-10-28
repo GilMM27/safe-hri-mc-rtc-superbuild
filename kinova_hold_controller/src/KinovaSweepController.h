@@ -3,6 +3,8 @@
 #include <mc_control/mc_controller.h>
 #include <mc_mujoco/SmplhDistanceSnapshot.h>
 #include "SSMPFLConstraint.h"
+#include "SSMPFLMath.h"
+#include "SSMPFLRelaxation.h"
 #include <RBDyn/FD.h>
 
 #include <atomic>
@@ -44,7 +46,14 @@ private:
   };
   struct PairLog
   {
-    std::string link, body, geometry;
+    std::string link, body, geometry, derivativeReason;
+    std::uint64_t sequence = 0;
+    double sampleTime = 0, sampleAge = 0;
+    double distanceRate = 0, mobilityRate = 0, pflRate = 0, speedRate = 0, humanApproachRate = 0;
+    double barrier = 0, beta = 0, qpBound = 0, robotBudget = 0, predictedRobotSpeed = 0;
+    double relaxation = 0, stage1Relaxation = 0, retreatRelaxation = 0, relaxationWeight = 1, relaxationScale = 1;
+    double originalResidual = 0, relaxedResidual = 0;
+    bool derivativeValid = false, featureSwitch = false, derivativeFallback = false;
     double distance = std::numeric_limits<double>::quiet_NaN();
     double robotPointX = 0, robotPointY = 0, robotPointZ = 0;
     double humanPointX = 0, humanPointY = 0, humanPointZ = 0;
@@ -68,6 +77,26 @@ private:
   bool monitorOnly_ = false;
   bool holdOnConstraintUnavailable_ = true;
   bool movingHuman_ = false;
+  bool temporalBarrier_ = false;
+  bool relaxationEnabled_ = false, recoveryMode_ = false, fullQPRecovery_ = false;
+  double relaxationActivationTolerance_ = 1e-4, relaxationRecoveryTolerance_ = 5e-5;
+  double relaxationStage2Tolerance_ = 1e-5, accelerationRegularization_ = 1e-10;
+  double relaxationMaxStage2Slack_ = 0.2; // m/s; moving-human recovery only
+  double stage2ToleranceApplied_ = 0;
+  double relaxationMaxAcceleration_ = std::numeric_limits<double>::quiet_NaN();
+  double relaxationObjective_ = 0, stage1Seconds_ = 0, stage2Seconds_ = 0;
+  double stage2RetryCap_ = 0;
+  double fullQPExtraSlack_ = 0;
+  bool fullQPExceededLegacyCap_ = false;
+  int stage2RetryAttempts_ = 0;
+  int relaxedPairs_ = 0;
+  int retreatRelaxedPairs_ = 0;
+  std::string stage1Status_ = "disabled", stage2Status_ = "not run";
+  Eigen::VectorXd relaxationWeights_, relaxationScales_;
+  double barrierGamma_ = 5.0;
+  double maxDerivativeGap_ = 0.5;
+  double maxWitnessStep_ = 0.03, maxNormalStep_ = 0.3;
+  std::vector<ssm_pfl::TemporalDerivative> derivatives_;
   bool safetyFallback_ = false;
   bool solverSuccess_ = true;
   double stopTime_ = 0.5, maxSampleAge_ = 0.1;
@@ -75,6 +104,7 @@ private:
   double maxActualResidual_ = 0.02;
   double minMobility_ = 1e-12, minMassEigenvalue_ = 1e-9;
   double safetyTime_ = 0, safetyComputationSeconds_ = 0;
+  double recoveryWarningTime_ = -std::numeric_limits<double>::infinity();
   int limitingPair_ = -1, activePairs_ = 0, bindingPairs_ = 0;
   int uncontrollablePairs_ = 0;
   int monitorOnlyPairs_ = 0;
@@ -91,6 +121,8 @@ private:
   SpeedPlotSample speedPlot_;
   size_t plotPairIndex_ = 6; // head/joint_7
   std::unique_ptr<SSMPFLConstraint> safetyConstraint_;
+  std::unique_ptr<SSMPFLAccelerationBounds> accelerationBounds_;
+  std::unique_ptr<SSMPFLRelaxation> relaxation_;
   std::unique_ptr<rbd::ForwardDynamics> inertia_;
 
   std::atomic<bool> startRequested_{false};
