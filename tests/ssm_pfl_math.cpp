@@ -36,11 +36,17 @@ int main()
   assert(near(immobile.pflSpeed, 0));
   assert(std::isinf(immobile.reflectedMass));
 
-  // A held robot's acceleration row remains feasible regardless of human
-  // velocity, which the robot cannot control.
-  assert(near(ssm_pfl::accelerationBound(0.2, 0.0, 0.0, 0.002), 0.2));
-  assert(near(ssm_pfl::accelerationBound(0.0, 0.0, 0.0, 0.002), 0.0));
-  assert(near(ssm_pfl::accelerationBound(0.2, 0.1, 2.0, 0.002), 0.096));
+  // Human motion toward the robot tightens the robot acceleration bound;
+  // motion away relaxes it. The next-step relative speed equals the limit at
+  // the bound.
+  assert(near(ssm_pfl::accelerationBound(0.2, 0.0, 0.0, 0.0, 0.002), 0.2));
+  assert(near(ssm_pfl::accelerationBound(0.0, 0.0, 0.0, 0.0, 0.002), 0.0));
+  assert(near(ssm_pfl::accelerationBound(0.2, 0.1, 0.0, 2.0, 0.002), 0.096));
+  const double approachingBound = ssm_pfl::accelerationBound(0.2, 0.1, -0.15, 2.0, 0.002);
+  const double retreatingBound = ssm_pfl::accelerationBound(0.2, 0.1, 0.15, 2.0, 0.002);
+  assert(near(approachingBound, -0.054));
+  assert(near(retreatingBound, 0.246));
+  assert(near(0.1 + 0.002 * 2.0 + approachingBound - (-0.15), 0.2));
 
   // With regions on opposite sides, retreat from +x approaches -x.
   const double robotXVelocity = -0.4;
