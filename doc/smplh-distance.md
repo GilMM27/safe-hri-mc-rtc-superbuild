@@ -50,16 +50,21 @@ mapping region names to SMPL-H joint indexes.
 The native worker processes the latest immutable human-pose and robot-transform
 snapshot in the background. Before each controller run, completed results are
 published as `SMPLH::DistanceSnapshot` in the datastore. Results include sample
-age, motion frame, readiness, per-region closest points, selected robot geom,
-and clearance. For a valid non-intersecting result, the unit direction is
+age, motion frame, readiness, per-region and per-link closest points, selected
+robot geom, and clearance. The playback bridge compares each human region with
+MuJoCo group 2 geometry on the seven movable Kinova joint links. The fixed
+base is excluded. Fixed descendants belong to their nearest joint link. Each
+pair retains the closest geom on that link. For a valid non-intersecting result,
+the unit direction is
 `(robot_point - human_point) / distance`. Intersections report zero clearance
 and have no reliable separation direction. The first result is unavailable
 until the asynchronous query finishes.
 
-The MuJoCo viewer draws the closest-point arrows and cyan/orange endpoints.
-The standalone `mc_rtc_gui` lists regional values and closest robot geometries
-under **SMPL-H distances**; it does not display the MuJoCo scene. The mc_rtc
-log records `SMPLH_distance_<region>` in meters and
+The MuJoCo viewer draws the closest pair per human region as an arrow with
+cyan/orange endpoints. The standalone `mc_rtc_gui` lists each region's closest
+link and robot geometry under **SMPL-H distances**; it does not display the
+MuJoCo scene. The mc_rtc
+log records the minimum across links as `SMPLH_distance_<region>` in meters and
 `SMPLH_distance_approximate`.
 
 The native worker requests a sample every 25 physics steps by default
