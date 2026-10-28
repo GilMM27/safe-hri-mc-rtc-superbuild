@@ -23,7 +23,6 @@ KinovaHoldController::KinovaHoldController(mc_rbdyn::RobotModulePtr rm,
                                            const mc_rtc::Configuration & config)
 : mc_control::MCController(rm, dt)
 {
-  solver().addConstraintSet(contactConstraint);
   solver().addConstraintSet(dynamicsConstraint);
   solver().addTask(postureTask);
   solver().setContacts({});

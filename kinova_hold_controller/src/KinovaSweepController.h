@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mc_control/mc_controller.h>
+#include <mc_control/fsm/Controller.h>
 #include <mc_mujoco/SmplhDistanceSnapshot.h>
 #include "SSMPFLConstraint.h"
 #include "SSMPFLMath.h"
@@ -14,7 +15,7 @@
 #include <limits>
 #include <vector>
 
-struct KinovaSweepController : public mc_control::MCController
+struct KinovaSweepController : public mc_control::fsm::Controller
 {
   KinovaSweepController(mc_rbdyn::RobotModulePtr rm, double dt, const mc_rtc::Configuration & config);
   ~KinovaSweepController() override;
@@ -38,6 +39,11 @@ private:
   void addSpeedPlot();
   void updateSpeedPlot();
 
+  // Constraint configuration
+  double velPercent_ = 0.95;
+  double dsPercent_ = 0.01;
+  double diPercent_ = 0.1;
+
   struct SafetyRegion
   {
     double force = 0.0;
@@ -52,6 +58,7 @@ private:
     double distanceRate = 0, mobilityRate = 0, pflRate = 0, speedRate = 0, humanApproachRate = 0;
     double barrier = 0, beta = 0, qpBound = 0, robotBudget = 0, predictedRobotSpeed = 0;
     double relaxation = 0, stage1Relaxation = 0, retreatRelaxation = 0, relaxationWeight = 1, relaxationScale = 1;
+    double softSlack = 0;
     double originalResidual = 0, relaxedResidual = 0;
     bool derivativeValid = false, featureSwitch = false, derivativeFallback = false;
     double distance = std::numeric_limits<double>::quiet_NaN();
@@ -79,6 +86,7 @@ private:
   bool movingHuman_ = false;
   bool temporalBarrier_ = false;
   bool relaxationEnabled_ = false, recoveryMode_ = false, fullQPRecovery_ = false;
+  double softSafetyWeight_ = 0;
   double relaxationActivationTolerance_ = 1e-4, relaxationRecoveryTolerance_ = 5e-5;
   double relaxationStage2Tolerance_ = 1e-5, accelerationRegularization_ = 1e-10;
   double relaxationMaxStage2Slack_ = 0.2; // m/s; moving-human recovery only
@@ -90,6 +98,8 @@ private:
   bool fullQPExceededLegacyCap_ = false;
   int stage2RetryAttempts_ = 0;
   int relaxedPairs_ = 0;
+  int softViolatingPairs_ = 0;
+  double softMaxViolation_ = 0;
   int retreatRelaxedPairs_ = 0;
   std::string stage1Status_ = "disabled", stage2Status_ = "not run";
   Eigen::VectorXd relaxationWeights_, relaxationScales_;
@@ -134,6 +144,7 @@ private:
   double dwellSeconds_ = 0.25;
   double maxJointSpeed_ = 0.6;
   double postureStiffness_ = 25.0;
+  double sweepPostureWeight_ = 10.0;
   bool autoStart_ = false;
   bool autoStartPending_ = false;
   bool resumeAfterMeasurement_ = false;
