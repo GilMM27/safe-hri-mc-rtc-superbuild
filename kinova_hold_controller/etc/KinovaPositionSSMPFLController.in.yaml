@@ -1,0 +1,6 @@
+# Set SSMPFL.Weight and all regional force/stiffness parameters in the
+# controller configuration before selecting this controller.
+Managed: true
+PositionTask:
+  Weight: 5.0
+  Stiffness: 2.0

@@ -43,3 +43,11 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/etc/KinovaSweepController.yaml
         DESTINATION ${MC_CONTROLLER_RUNTIME_INSTALL_PREFIX}/etc
 )
 
+configure_file(
+  etc/KinovaPositionSSMPFLController.in.yaml
+  ${CMAKE_CURRENT_BINARY_DIR}/etc/KinovaPositionSSMPFLController.yaml
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/etc/KinovaPositionSSMPFLController.yaml
+        DESTINATION ${MC_CONTROLLER_RUNTIME_INSTALL_PREFIX}/etc
+)
+
