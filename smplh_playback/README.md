@@ -83,6 +83,32 @@ open `mc_rtc_gui`, and press **Kinova sweep → Start**. Keep the human clear of
 the arm for this first test. **Stop** holds the measured posture, and a MuJoCo
 reset returns the sweep to its waiting state.
 
+For manual tool motion with SSM+PFL, copy
+`smplh_playback/KinovaPositionSSMPFLController.ssm_pfl.example.yaml` to your
+mc_rtc controller configuration and set `Enabled: KinovaPositionSSMPFLController`.
+Run `mc_mujoco --sync -f <your-controller-config.yaml>`, then open `mc_rtc_gui`.
+Under **Tasks → KinovaToolPosition**, drag **pos_target** or enter its world-frame
+XYZ coordinates. The task starts at the tool's current position; it does not
+control orientation or prefer a particular joint posture. Set
+`PositionTask.Weight` in the controller YAML to choose the startup task weight
+(default `5.0`); it can also be changed live under **Tasks → KinovaToolPosition
+→ Gains → weight**. Set `PositionTask.Stiffness` to choose the startup motion
+gain (default `2.0`); **Gains → stiffness & damping** changes it live with
+matching damping. Set
+`SSMPFL.HumanMode` to `moving` for playback or `frozen` for a held human.
+The example's regional parameters are placeholders. `SSMPFL.Weight` penalizes
+speed-bound violations through soft QP slack, so the bound can be exceeded.
+If a distance sample is missing or stale, the controller cancels the current
+target and holds the current tool position. Set a new GUI target once samples
+recover. **SSM+PFL → State** reports the reason, and the log records the
+active pair count, sample age, each pair's robot speed allowance and soft
+slack, and the largest soft slack.
+The **SSM+PFL closest robot approach speed** plot follows whichever
+human-region/robot-link pair has the smallest sampled clearance. The
+**Closest pair in speed plot** label identifies the pair currently shown;
+the plotted curves may jump when that pair changes. Missing or invalid
+samples leave a gap in the plot.
+
 ## 4. Add the human to the MuJoCo scene
 
 Create `~/.config/mc_rtc/mc_mujoco/mc_mujoco.yaml` aka mc_mujoco_config with the human object, or add
