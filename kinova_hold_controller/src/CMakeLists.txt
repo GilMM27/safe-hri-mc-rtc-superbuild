@@ -9,3 +9,6 @@ set_target_properties(
 
 add_controller(KinovaSweepController KinovaSweepController.cpp KinovaSweepController.h)
 target_link_libraries(KinovaSweepController PRIVATE mc_rtc::mc_control_fsm)
+
+add_controller(KinovaPositionSSMPFLController KinovaPositionSSMPFLController.cpp KinovaPositionSSMPFLController.h)
+target_link_libraries(KinovaPositionSSMPFLController PRIVATE mc_rtc::mc_control_fsm)
