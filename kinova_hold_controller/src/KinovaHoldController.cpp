@@ -3,6 +3,7 @@
 #include <mc_rtc/gui/Label.h>
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -62,29 +63,30 @@ double KinovaHoldController::regionDistance(const std::string & region) const
 {
   const auto * snapshot = distanceSnapshot();
   if(!snapshot) return std::numeric_limits<double>::quiet_NaN();
+  double distance = std::numeric_limits<double>::infinity();
   for(const auto & value : snapshot->regions)
-  {
-    if(value.region == region) return value.distance;
-  }
-  return std::numeric_limits<double>::quiet_NaN();
+    if(value.region == region) distance = std::min(distance, value.distance);
+  return std::isfinite(distance) ? distance : std::numeric_limits<double>::quiet_NaN();
 }
 
 std::string KinovaHoldController::regionStatus(const std::string & region) const
 {
   const auto * snapshot = distanceSnapshot();
   if(!snapshot) return "Waiting for distance sample";
+  const mc_mujoco::SmplhRegionDistance * closest = nullptr;
   for(const auto & value : snapshot->regions)
   {
     if(value.region != region) continue;
-    std::ostringstream status;
-    status.precision(4);
-    status << value.distance << " m";
-    if(snapshot->approximate) status << " (approximate)";
-    status << "  |  " << value.robot_geometry;
-    if(value.intersecting) status << (snapshot->approximate ? "  |  hull overlap" : "  |  intersection");
-    return status.str();
+    if(!closest || value.distance < closest->distance) closest = &value;
   }
-  return "Region not present in cache";
+  if(!closest) return "Region not present in cache";
+  std::ostringstream status;
+  status.precision(4);
+  status << closest->distance << " m";
+  if(snapshot->approximate) status << " (approximate)";
+  status << "  |  " << closest->link << ": " << closest->robot_geometry;
+  if(closest->intersecting) status << (snapshot->approximate ? "  |  hull overlap" : "  |  intersection");
+  return status.str();
 }
 
 CONTROLLER_CONSTRUCTOR("KinovaHoldController", KinovaHoldController)

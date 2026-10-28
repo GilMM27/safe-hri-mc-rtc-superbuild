@@ -13,9 +13,10 @@ not verified biomechanical parameters.
 `KinovaSweepController` is the nominal posture-task controller at 2 ms. Its
 Tasks QP retains the contact, dynamics (including model joint/torque limits),
 and Kinova minimal self-collision constraint sets. SSM+PFL adds a fixed-size
-general inequality with one row for each of the 14 SMPL-H body regions in the
-existing distance worker. A different Kinova geometry can win for each region
-and at each sample. The selected geometry's MuJoCo body name is mapped to the
+general inequality with one row slot for each of the 14 SMPL-H body regions paired
+with each of the seven movable Kinova links (joints 1–7). The distance worker
+returns the closest geometry on each link for each region. The selected
+geometry's MuJoCo body name is mapped to the
 mc_rtc link name, and its witness point is stored in body-local coordinates.
 The RBDyn point Jacobian and its derivative are evaluated at that point using
 the current controller model. `RBDyn::ForwardDynamics::computeH` supplies the
@@ -34,14 +35,13 @@ vPFL = (Fmax / sqrt(k)) sqrt(w)   [m/s]
 dEffective = max(d - margin, 0)   [m]
 vLimit = dEffective/Tstop + vPFL  [m/s]
 closing = nᵀ(J qdot - vH)         [m/s]
-dt nᵀ J qddot <= vLimit - nᵀJ qdot - dt nᵀJdot qdot
+dt nᵀ J qddot <= vLimit - nᵀ(J qdot - vH) - dt nᵀJdot qdot
 ```
 
-The last inequality predicts the next sampled point velocity with current
-`n`, witness, and robot speed limit held constant for one controller step.
-Human approach is an external input and cannot make this robot-acceleration
-row demand retreat. Human motion is logged for contact analysis but does not
-stop the sweep based on a separate protective-distance threshold.
+The last inequality predicts next-step relative closing speed with current
+`n`, witness, sampled human velocity, and speed limit held constant for one
+controller step. Human motion toward the robot tightens the bound and can
+require robot retreat. It is not a separate protective-distance threshold.
 Every selected region row constrains the whole joint-acceleration vector.
 Region retreat does not disable any other region's row. It can redistribute
 joint motion and change the nominal path. No slack is added to these rows.
@@ -52,9 +52,9 @@ that phase. Rows become active on Start. The default is `true` for existing
 configurations. Monitoring alone does not enforce a speed limit.
 
 Near-zero nonnegative mobility yields zero PFL speed and infinite logged
-reflected mass. The controller omits a QP row when the selected robot body has
-no useful directional mobility, as with the fixed `base_link`. Such a row
-cannot change the robot's speed. The measured relative closing residual and the region's
+reflected mass. The controller omits a QP row when a selected point has
+no useful directional mobility. Such a row cannot change the robot's speed.
+The measured relative closing residual and the region's
 `SSMPFL_<region>_uncontrollable` flag remain logged; the GUI lists these
 regions. An omitted row does not enforce the speed limit. At zero reported
 clearance a controllable row uses the PFL speed. In approximate SCH mode,
@@ -140,10 +140,12 @@ envelope in MuJoCo. The controller does not claim a physical PFL guarantee.
 
 ## Geometry and model limits
 
-The native worker considers Kinova collision geoms in MuJoCo group 2 whose
-body names start with `kinova_` by default. It returns **one closest robot
-geom per human region**, not every geom-region pair. The 14 human regions are
-mesh-triangle partitions from the SMPL-H skinning weights. The default
+The native worker considers MuJoCo group 2 geoms on the seven movable Kinova
+links, with body names starting `kinova_`. The fixed base is excluded. Fixed
+descendants belong to the nearest joint link. It returns **one closest geom
+per human-region/link pair**, for 98 reported pairs and up to 98 active QP
+rows. The 14 human regions are mesh-triangle partitions from the SMPL-H
+skinning weights. The default
 `sch_approx` path uses convex patches and convex robot meshes. Its clearance
 may be smaller than exact surface clearance, and its witness may lie on a
 convex hull. `SMPLH_DISTANCE_MODE=fcl` uses the triangle surface instead.
@@ -200,11 +202,13 @@ so inspect its Sweep values when reproducing a run. For isolated headless
 validation, `ClearGlobalPluginPath: true` prevents the optional ROS autoload.
 Use `mc_bin_utils show <log.bin>` to list signals and
 `python3 smplh_playback/analyze_ssm_pfl.py <log.bin>` to summarize sampled
-predicted robot-speed and observed relative-closing residuals. A positive
-predicted residual exceeds the robot-speed QP bound; a positive observed
-residual means human and robot closed faster than that robot-speed bound,
-which may be caused entirely by human motion. The sample age and per-region witness coordinates,
+predicted and observed relative-closing residuals. A positive predicted
+residual exceeds the relative-speed QP bound; a positive observed residual
+means human and robot closed faster than that bound. The sample age and per-region witness coordinates,
 velocities, inverse mass, limits, and residuals are logged in the bin file.
+Each region/link pair also logs distance, closing speed, limit, residuals, and
+row status under `SSMPFLPair_<region>_<link>_*`. The existing
+`SSMPFL_<region>_*` keys report the closest link for that region.
 `SSMPFL_binding_pairs` counts nonzero-mobility rows whose predicted residual
 is within 0.001 m/s of the bound; `SSMPFL_limiting_pair` identifies the
 closest such row even when none is binding.
@@ -217,12 +221,19 @@ uncontrollable ones.
 The **SSM+PFL** GUI panel lists the regions at the QP speed bound and the
 limiting row's current model robot approach speed, solved next-step robot
 approach speed, sampled MuJoCo robot approach speed, and allowed robot speed.
-The **SSM+PFL robot approach speed (m/s)** live plot shows these four values.
+The **SSM+PFL robot approach speed (m/s)** live plot shows these four values
+for the pair selected in **Plot region/link** (initially `head/joint_7`).
+Selection resets the plot history, so traces never splice values from different
+pairs together. Its red speed limit is the allowed robot approach speed:
+relative closing limit plus the human velocity along the contact normal.
+During an unavailable distance sample or QP solve, traces hold their last
+valid values; **Plot sample age** reports how old the distance and QP values
+are. Held values are for display only and do not affect the constraints.
 The MuJoCo value belongs to the distance sample and can lag the current
 control tick. Positive robot approach is toward the human; negative values
-are away. Human approach remains visible in the panel and in the relative
-closing log. The MuJoCo trace is magenta for visibility. The log records
-the relative closing values as
+are away. Human velocity remains visible in the panel and in the relative
+closing log. The MuJoCo trace is magenta for visibility. The log records the
+relative closing values as
 `SSMPFL_limiting_closing_mps`, `SSMPFL_limiting_qp_next_closing_mps`, and
 `SSMPFL_limiting_sampled_closing_mps`, and `SSMPFL_limiting_speed_limit_mps`,
 plus `SSMPFL_at_speed_bound` and
@@ -238,6 +249,10 @@ g++ -std=c++17 -O2 -I/usr/include/eigen3 tests/ssm_pfl_math.cpp -o /tmp/ssm-pfl-
 ```
 
 ## Validation on 2026-10-15
+
+The measurements in this section used the earlier single-closest-link row per
+human region. They are historical results and do not validate the current
+per-link QP.
 
 The installed `mc_mujoco` and controller were rebuilt and run with the local
 prepared `drink` cache (1603 frames at 120 Hz), 2 ms physics and controller
@@ -261,7 +276,7 @@ that automatic hold has been removed. The restrictive run above used the
 earlier residual-triggered hold; the current version only reports those
 sampled violations.
 
-Additional checks: 14 distinct region rows were present whenever samples were
+Additional checks from earlier single-winner runs over all links: 14 distinct region rows were present whenever samples were
 valid; selected Kinova links included base, shoulder, half-arm, forearm,
 spherical wrist, and bracelet. The selected link switched as the arm moved.
 The left-upper-arm region's reflected mass varied from about 1.70 to 52.7 kg

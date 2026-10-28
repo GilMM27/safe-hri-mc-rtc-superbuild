@@ -38,12 +38,13 @@ inline Limit limit(const Eigen::LDLT<Eigen::MatrixXd> & inertia,
           pfl, combined};
 }
 
-// The QP controls robot acceleration, not human motion. Human approach is
-// measured separately for contact analysis.
+// Hold the sampled human velocity constant for one controller step. The QP
+// controls robot acceleration so that next-step relative closing stays below
+// the combined SSM+PFL speed limit.
 inline double accelerationBound(double combinedSpeed, double robotApproach,
-                                double jacobianDrift, double dt)
+                                double humanApproach, double jacobianDrift, double dt)
 {
-  const double bound = combinedSpeed - robotApproach - dt * jacobianDrift;
+  const double bound = combinedSpeed - (robotApproach - humanApproach) - dt * jacobianDrift;
   if(!std::isfinite(bound) || !std::isfinite(dt) || dt <= 0)
     throw std::domain_error("invalid acceleration inequality");
   return bound;
