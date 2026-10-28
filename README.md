@@ -12,6 +12,7 @@
   - [Bashrc](#bashrc)
   - [Running the Kinova Gen3 in MuJoCo](#running-the-kinova-gen3-in-mujoco)
 - [SMPL-H / AMASS human playback](#smpl-h--amass-human-playback)
+- [Project architecture and QP guide](#project-architecture-and-qp-guide)
 - [mc_rtc robots](#mc_rtc-robots)
 - [Contributing and issues](#contributing-and-issues)
 
@@ -192,7 +193,7 @@ GUIServer:
 Set `Sweep.AmplitudeRad` to a negative value (for example, `-0.2`) to sweep
 `joint_1` toward the other side of home. The waypoint must remain within the
 robot model's joint limits. Adjust `Sweep.SegmentSeconds`, `Sweep.DwellSeconds`, and
-`Sweep.MaxJointSpeedRadS` and `Sweep.PostureStiffness` in
+`Sweep.MaxJointSpeedRadS`, `Sweep.PostureStiffness`, and `Sweep.PostureWeight` in
 `~/.config/mc_rtc/controllers/KinovaSweepController.yaml`
 if needed. The installed defaults are in
 `kinova_hold_controller/etc/KinovaSweepController.in.yaml`. The
@@ -200,7 +201,8 @@ controller extends segment time when necessary to respect the configured
 joint reference speed and the robot model's velocity limit. `SegmentSeconds`
 uses simulation time, so a slow MuJoCo run takes longer on the wall clock.
 `PostureStiffness` controls how closely the simulated arm follows the
-reference; the sweep defaults to 25, while the stationary hold controller
+reference; `PostureWeight` sets the sweep posture task's QP weight. Their
+defaults are 25 and 10, respectively. The stationary hold controller
 still uses 1. Check the arm's clearance from the table and human for
 your scene before using a changed sweep. It logs the cycle phase (0 hold,
 1 outbound, 2 outbound dwell, 3 return, 4 home dwell), commanded and measured
@@ -217,6 +219,12 @@ surface distances with simplified collision elements. See
 [the playback guide](smplh_playback/README.md) for model/data setup, build
 option, coordinate alignment, launch commands, region definitions, distance
 records, and limitations.
+
+## Project architecture and QP guide
+
+See [the project architecture and QP guide](doc/architecture.md) for a map of
+the superbuild, controllers, human playback, distance worker, and the SSM+PFL
+quadratic program.
 
 ## mc_rtc robots
 

@@ -24,6 +24,10 @@ if(BUILD_TESTING)
   target_link_libraries(kinova_tvm_smoke_test PRIVATE KinovaSweepController mc_rtc::mc_control)
   add_test(NAME kinova_tvm_smoke COMMAND kinova_tvm_smoke_test
            ${CMAKE_CURRENT_SOURCE_DIR}/../smplh_playback/KinovaSweepController.ssm_pfl.example.yaml)
+  add_executable(kinova_position_ssm_pfl_smoke_test tests/kinova_position_ssm_pfl_smoke.cpp)
+  target_link_libraries(kinova_position_ssm_pfl_smoke_test PRIVATE KinovaPositionSSMPFLController mc_rtc::mc_control)
+  add_test(NAME kinova_position_ssm_pfl_smoke COMMAND kinova_position_ssm_pfl_smoke_test
+           ${CMAKE_CURRENT_SOURCE_DIR}/../smplh_playback/KinovaPositionSSMPFLController.ssm_pfl.example.yaml)
 endif()
 
 set(AROBASE "@")
@@ -50,4 +54,3 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/etc/KinovaPositionSSMPFLController.yaml
         DESTINATION ${MC_CONTROLLER_RUNTIME_INSTALL_PREFIX}/etc
 )
-
