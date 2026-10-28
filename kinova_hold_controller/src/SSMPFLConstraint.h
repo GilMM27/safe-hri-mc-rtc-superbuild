@@ -2,7 +2,7 @@
 
 #include <mc_solver/GenInequalityConstraint.h>
 
-// Tasks backend only. One row per configured human region, with fixed storage
+// Tasks backend only. One row per human region and robot link, with fixed storage
 // so a changing closest pair does not resize the QP on each controller tick.
 struct SSMPFLConstraint final : mc_solver::GenInequalityConstraintRobot
 {
