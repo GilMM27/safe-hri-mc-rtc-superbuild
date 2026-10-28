@@ -68,7 +68,7 @@ log records the minimum across links as `SMPLH_distance_<region>` in meters and
 `SMPLH_distance_approximate`.
 
 The native worker requests a sample every 25 physics steps by default
-(`SMPLH_DISTANCE_EVERY=25`): 40 Hz at a 1 ms physics step or 20 Hz at 2 ms.
+(`SMPLH_DISTANCE_EVERY=25`): 40 Hz at the configured 1 ms physics step.
 `SMPLH_DISTANCE_EVERY=1` requests every step. Worker throughput can limit the
 actual update rate. The articulated pose still follows simulation time, while
 vertices and normals are transferred only when the motion frame changes. The
