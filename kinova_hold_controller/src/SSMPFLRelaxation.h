@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-// Separate QP because Tasks fixes its variable vector to robot accelerations and
-// contact forces. The final mc_rtc solve still applies the ordinary task.
+// A separate Stage 1 QP allocates one slack per pair. The final TVM solve
+// applies these allowances alongside the ordinary posture and hard constraints.
 struct SSMPFLRelaxation
 {
   SSMPFLRelaxation(int dofs, int pairs)
