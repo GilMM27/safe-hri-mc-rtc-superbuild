@@ -6,16 +6,18 @@ Sweep:
   DwellSeconds: 0.25
   MaxJointSpeedRadS: 0.6
   PostureStiffness: 25.0
+  PostureWeight: 10.0
   AutoStart: false # true for scripted headless validation
 SSMPFL:
   Enabled: true
+  Weight: 1.0e6 # soft row cost per squared m/s violation; tune against PostureWeight
   ConstrainWhileHolding: true # false monitors without QP rows until Start
   HoldOnConstraintUnavailable: true # false continues the sweep without SSM+PFL rows on invalid samples
   HumanMode: frozen # set moving and unset SMPLH_FREEZE_FRAME for moving playback
-  ConstraintMode: pointwise_speed # moving mode always uses pointwise speed bounds
+  ConstraintMode: pointwise_speed # set temporal_barrier for a relative-speed barrier in either human mode
   BarrierGammaPerSecond: 5.0 # research tuning; 1/dt is not a safety proof
   Relaxation:
-    Enabled: false # opt in to bounded speed-bound recovery; report every relaxed row
+    Enabled: false # alternative to Weight; remove Weight before enabling relaxation
     Mode: two_stage_regularized # opt in to full hard-row recovery with two_stage_full_feasibility
     DefaultScale: 0.01 # m/s for pointwise_speed or legacy; use 1.0 m/s² for temporal_barrier
     ActivationTolerance: 1.0e-4 # normalized slack, reporting only
@@ -23,7 +25,7 @@ SSMPFL:
     Stage2Tolerance: 1.0e-5 # physical row units beyond Stage 1 slack
     AccelerationRegularization: 1.0e-10 # QLD positive-definite tie breaker
     MaxAccelerationRadS2: 10.0 # explicit research bound; replace with measured capability
-    MaxStage2SlackMps: 0.2 # moving mode: cap shared speed slack in full-QP retry
+    MaxStage2SlackMps: 0.2 # moving pointwise mode: cap shared speed slack in regularized retry
     # Regions: {left_hand: {Weight: 1.0, Scale: 1.0}}
   MaxDerivativeGapSeconds: 0.5 # derivative history gap, separate from sample freshness
   MaxWitnessStepM: 0.03 # reject temporal derivative across large witness migration
