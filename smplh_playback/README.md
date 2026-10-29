@@ -97,6 +97,9 @@ objects:
       rotation: [0.0, 0.0, 0.0]
 ```
 
+Edit `init_pos` here and restart `mc_mujoco` to change the human's placement.
+The `-f` option loads an mc_rtc configuration, where `objects` is ignored.
+
 Copy the generated module configuration beside it:
 
 ```sh

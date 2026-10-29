@@ -23,6 +23,7 @@ class SmplhBridge
   struct Header { char magic[8]; uint32_t frames, vertices, faces, regions, nq; double fps; };
 #pragma pack(pop)
   int fd_ = -1, mesh_ = -1, surfaceGeom_ = -1;
+  int surfaceBody_ = -1;
   void * mapping_ = MAP_FAILED;
   size_t bytes_ = 0;
   const float * qpos_ = nullptr;
@@ -54,7 +55,7 @@ class SmplhBridge
     }
     throw std::runtime_error("Missing SMPL-H model element: " + name);
   }
-  void initialize(mjModel * m)
+  void initialize(mjModel * m, const mjData * d)
   {
     if(initialized_) return;
     initialized_ = true;
@@ -97,6 +98,7 @@ class SmplhBridge
     if(every) distanceEvery_ = std::max(1, std::atoi(every));
     int geom = find(m, mjOBJ_GEOM, "smplh_surface");
     surfaceGeom_ = geom;
+    surfaceBody_ = m->geom_bodyid[geom];
     mesh_ = m->geom_dataid[geom];
     if(mesh_ < 0 || static_cast<uint32_t>(m->mesh_vertnum[mesh_]) != vertexCount_
        || static_cast<uint32_t>(m->mesh_normalnum[mesh_]) != vertexCount_)
@@ -111,6 +113,12 @@ class SmplhBridge
     mju_zero(m->mesh_quat + 4 * mesh_, 4);
     m->mesh_quat[4 * mesh_] = 1;
     for(int i = 0; i < 52; ++i) joints_.push_back(find(m, mjOBJ_JOINT, i ? "smplh_joint_" + std::to_string(i) : "smplh_root"));
+    // mc_mujoco assigns objects.human.init_pos to the first free joint,
+    // whereas the display mesh belongs to a separate fixed body. Capture
+    // that placement before the cached free-joint pose overwrites it.
+    const auto * initialRoot = d->qpos + m->jnt_qposadr[joints_[0]];
+    mju_copy3(m->body_pos + 3 * surfaceBody_, initialRoot);
+    mju_copy4(m->body_quat + 4 * surfaceBody_, initialRoot + 3);
     loop_ = std::getenv("SMPLH_LOOP") && std::string(std::getenv("SMPLH_LOOP")) == "1";
     if(const char * frozen = std::getenv("SMPLH_FREEZE_FRAME"))
     {
@@ -134,7 +142,7 @@ public:
   ~SmplhBridge() { if(mapping_ != MAP_FAILED) munmap(mapping_, bytes_); if(fd_ >= 0) close(fd_); }
   void update(mjModel * m, mjData * d)
   {
-    initialize(m);
+    initialize(m, d);
     if(mapping_ == MAP_FAILED) return;
     if(!std::isfinite(d->time) || d->time < 0) return;
     uint64_t index = static_cast<uint64_t>(std::floor(d->time * fps_ + 1e-9));
@@ -148,6 +156,18 @@ public:
     {
       int id = joints_[j], nq = j ? 4 : 7, nv = j ? 3 : 6;
       for(int k = 0; k < nq; ++k) d->qpos[m->jnt_qposadr[id] + k] = pose[offset + k];
+      if(j == 0)
+      {
+        // The visual mesh is placed by the fixed scene body. Apply the same
+        // placement to the animated free root so debug geoms stay aligned.
+        auto * root = d->qpos + m->jnt_qposadr[id];
+        const auto * rotation = m->body_quat + 4 * surfaceBody_;
+        mjtNum position[3], orientation[4];
+        mju_rotVecQuat(position, root, rotation);
+        mju_add3(root, position, m->body_pos + 3 * surfaceBody_);
+        mju_mulQuat(orientation, rotation, root + 3);
+        mju_copy4(root + 3, orientation);
+      }
       mju_zero(d->qvel + m->jnt_dofadr[id], nv);
       offset += nq;
     }

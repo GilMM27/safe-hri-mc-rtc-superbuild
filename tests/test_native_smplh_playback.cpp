@@ -19,9 +19,12 @@ int main(int argc, char ** argv)
     SmplhBridge bridge;
     data->time = 0.0; bridge.update(model, data);
     const double initial_x = data->qpos[0];
+    const double initial_y = data->qpos[1];
     int mesh = mj_name2id(model, mjOBJ_MESH, "smplh_surface");
     if(mesh < 0) throw std::runtime_error("Missing test surface mesh");
     int surfaceGeom=mj_name2id(model,mjOBJ_GEOM,"smplh_surface");
+    const double initial_surface_x = data->geom_xpos[3*surfaceGeom];
+    const double initial_surface_y = data->geom_xpos[3*surfaceGeom+1];
     if(std::abs(model->geom_pos[3*surfaceGeom])+std::abs(model->geom_pos[3*surfaceGeom+1])
        +std::abs(model->geom_pos[3*surfaceGeom+2])+std::abs(model->mesh_pos[3*mesh])
        +std::abs(model->mesh_pos[3*mesh+1])+std::abs(model->mesh_pos[3*mesh+2])>1e-9)
@@ -74,6 +77,32 @@ int main(int argc, char ** argv)
       if(std::getenv("SMPLH_TEST_INTERSECT") && !sawIntersection)
         throw std::runtime_error("expected native FCL intersection was not detected");
     }
+    // mc_mujoco writes init_pos to the free joint before playback starts.
+    // Playback must transfer that placement to the fixed visual body.
+    const double quarterTurn = std::sqrt(.5);
+    mjData * placedData = mj_makeData(model);
+    const int rootJoint = mj_name2id(model, mjOBJ_JOINT, "smplh_root");
+    auto * placedRoot = placedData->qpos + model->jnt_qposadr[rootJoint];
+    placedRoot[0] = .5;
+    placedRoot[1] = -.25;
+    placedRoot[2] = .1;
+    placedRoot[3] = quarterTurn;
+    placedRoot[4] = 0;
+    placedRoot[5] = 0;
+    placedRoot[6] = quarterTurn;
+    {
+      SmplhBridge placedBridge;
+      placedBridge.update(model, placedData);
+      if(std::abs(placedData->qpos[0] - (.5 - initial_y)) > 1e-6
+         || std::abs(placedData->qpos[1] - (-.25 + initial_x)) > 1e-6
+         || std::abs(placedData->qpos[3] - quarterTurn) > 1e-6
+         || std::abs(placedData->qpos[6] - quarterTurn) > 1e-6)
+        throw std::runtime_error("scene placement did not transform the cached root pose");
+      if(std::abs(placedData->geom_xpos[3*surfaceGeom] - (.5 - initial_surface_y)) > 1e-6
+         || std::abs(placedData->geom_xpos[3*surfaceGeom+1] - (-.25 + initial_surface_x)) > 1e-6)
+        throw std::runtime_error("scene placement did not transform the surface");
+    }
+    mj_deleteData(placedData);
   }
   catch(const std::exception & e)
   {
