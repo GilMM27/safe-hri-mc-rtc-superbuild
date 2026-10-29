@@ -33,6 +33,8 @@ private:
   std::string uncontrollableRegions() const;
   bool updateSafetyConstraint(bool applyConstraint);
   void safetyFallback(const std::string & reason);
+  void addSpeedPlot();
+  void updateSpeedPlot();
 
   struct SafetyRegion
   {
@@ -42,7 +44,7 @@ private:
   };
   struct PairLog
   {
-    std::string body, geometry;
+    std::string link, body, geometry;
     double distance = std::numeric_limits<double>::quiet_NaN();
     double robotPointX = 0, robotPointY = 0, robotPointZ = 0;
     double humanPointX = 0, humanPointY = 0, humanPointZ = 0;
@@ -79,7 +81,15 @@ private:
   int actualViolationPairs_ = 0;
   std::string fallbackReason_;
   std::map<std::string, SafetyRegion> safetyRegions_;
-  std::vector<PairLog> pairLogs_;
+  std::vector<PairLog> pairLogs_; // closest link per human region, for existing GUI/log keys
+  std::vector<PairLog> linkPairLogs_; // one entry per region/link pair
+  struct SpeedPlotSample
+  {
+    double current = 0, qpNext = 0, sampled = 0, limit = 0;
+    double sampleTime = -1, qpTime = -1;
+  };
+  SpeedPlotSample speedPlot_;
+  size_t plotPairIndex_ = 6; // head/joint_7
   std::unique_ptr<SSMPFLConstraint> safetyConstraint_;
   std::unique_ptr<rbd::ForwardDynamics> inertia_;
 
