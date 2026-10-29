@@ -22,13 +22,23 @@ struct SmplhRegionDistance
   bool human_normal_valid = false;
   bool intersecting = false;
   std::string robot_geometry;
+  std::string robot_body;
+  std::array<double, 3> robot_point_body_local{};
+  std::array<double, 3> human_velocity{};
+  bool human_velocity_valid = false;
+  std::array<double, 3> robot_velocity{};
+  bool robot_velocity_valid = false;
 };
 
 struct SmplhDistanceSnapshot
 {
   bool ready = false;
   bool approximate = false;
+  bool playback_frozen = false;
   std::uint64_t sequence = 0;
+  std::array<double, 7> robot_joint_positions{};
+  std::array<double, 7> robot_joint_velocities{};
+  bool robot_joints_valid = false;
   std::uint32_t motion_frame = 0;
   double sample_simulation_time = 0.0;
   double worker_duration_seconds = 0.0;
