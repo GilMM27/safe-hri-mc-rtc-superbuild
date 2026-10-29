@@ -10,7 +10,7 @@ not verified biomechanical parameters.
 
 ## Architecture and coordinates
 
-`KinovaSweepController` is the nominal posture-task controller at 2 ms. Its
+`KinovaSweepController` is the nominal posture-task controller at 1 ms. Its
 Tasks QP retains the contact, dynamics (including model joint/torque limits),
 and Kinova minimal self-collision constraint sets. SSM+PFL adds a fixed-size
 general inequality with one row for each of the 14 SMPL-H body regions in the
@@ -110,7 +110,7 @@ the velocity of the nearest material vertex in the selected region to the
 current human witness. It never differences successive closest-point
 coordinates. There is no filtering. The estimate is quantized to the cache
 frame period, then delayed by asynchronous distance processing and sampled
-every `SMPLH_DISTANCE_EVERY` physics steps (25 by default, 50 ms at 2 ms).
+every `SMPLH_DISTANCE_EVERY` physics steps (25 by default).
 It is invalid on the initial and wrap frames. A nearest vertex need not have
 the velocity of an interior triangle or convex-hull witness; this is a major
 moving-mode approximation.
@@ -181,7 +181,7 @@ Merge the `SSMPFL` block from
 into `~/.config/mc_rtc/controllers/KinovaSweepController.yaml`, preserving
 any existing Sweep settings. Create that file from the example if it does not
 exist. Set
-`Enabled: KinovaSweepController`, `MainRobot: Kinova`, and `Timestep: 0.002`
+`Enabled: KinovaSweepController`, `MainRobot: Kinova`, and `Timestep: 0.001`
 in `mc_rtc.yaml`. Enable the human object in `mc_mujoco.yaml` as in the
 playback guide. Start `mc_mujoco --sync`, then press **Kinova sweep → Start**
 in `mc_rtc_gui`. `Sweep.AutoStart: true` supports a scripted headless run.
