@@ -1,0 +1,6 @@
+Sweep:
+  AmplitudeRad: 0.2
+  SegmentSeconds: 1.0
+  DwellSeconds: 0.25
+  MaxJointSpeedRadS: 0.6
+  PostureStiffness: 25.0
