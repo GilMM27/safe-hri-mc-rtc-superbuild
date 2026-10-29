@@ -254,7 +254,12 @@ For a graze, the velocity component along the surface can be large while
 `nᵀ(vR-vH)` remains small or negative. The present row therefore does not cap
 the full point speed at the arm. The logged
 `SSMPFL_<region>_actual_relative_speed_mps` and
-`SSMPFL_<region>_actual_tangential_speed_mps` expose this gap. A feasible near-contact speed branch and earlier
+`SSMPFL_<region>_actual_tangential_speed_mps` expose this gap. A test fixture
+at reported torso overlap measured 0.216 m/s relative point speed, including
+0.197 m/s tangential speed, while normal closing speed was -0.073 m/s and the
+normal-direction PFL limit was 0.156 m/s. Those PFL/speed values use different
+directions and do not establish a force guarantee. A feasible near-contact
+speed branch and earlier
 trajectory slowdown remain required before this behavior can be called a
 complete SSM+PFL controller.
 
