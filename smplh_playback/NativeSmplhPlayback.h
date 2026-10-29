@@ -104,7 +104,8 @@ class SmplhBridge
        || static_cast<uint32_t>(m->mesh_normalnum[mesh_]) != vertexCount_)
       throw std::runtime_error("SMPL-H mesh topology does not match cache");
     // MuJoCo's OBJ compiler recenters mesh assets and stores compensating
-    // geom/mesh poses. Clear those asset transforms before playback.
+    // geom/mesh poses. Clear those asset transforms while retaining the pose
+    // of the merged body that places the human in the mc_mujoco scene.
     mju_zero(m->geom_pos + 3 * geom, 3);
     mju_zero(m->geom_quat + 4 * geom, 4);
     m->geom_quat[4 * geom] = 1;
