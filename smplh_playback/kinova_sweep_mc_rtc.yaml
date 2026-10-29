@@ -1,6 +1,6 @@
 MainRobot: Kinova
 Enabled: KinovaSweepController
-Timestep: 0.002
+Timestep: 0.001
 LogPolicy: threaded
 GUIServer:
   Enable: true
