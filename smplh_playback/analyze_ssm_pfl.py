@@ -89,6 +89,8 @@ def main():
             rows = list(csv.DictReader(stream, delimiter=';'))
     if not rows:
         parser.error('the log has no samples')
+    temporal_mode = bool(acceleration_keys) and any(
+        math.isfinite(float(row[key])) for row in rows for key in acceleration_keys)
     def measured_pairs(row):
         return (int(row['SSMPFL_active_pairs'])
                 + sum(int(row[key]) for key in uncontrollable_keys)
@@ -127,8 +129,9 @@ def main():
     if monitor_only_keys:
         result['monitor_only_pair_rows'] = sum(int(row[key]) for row in rows for key in monitor_only_keys)
     if relaxation_keys:
-        result['max_approach_slack_mps'] = max(float(row[f'{name}_relaxation_physical'])
-                                                for row in rows for name in row_keys)
+        slack_key = 'max_temporal_slack_mps2' if temporal_mode else 'max_approach_slack_mps'
+        result[slack_key] = max(float(row[f'{name}_relaxation_physical'])
+                                for row in rows for name in row_keys)
         if 'SSMPFL_full_qp_extra_slack' in keys:
             result['max_full_qp_extra_slack_physical'] = max(
                 float(row['SSMPFL_full_qp_extra_slack']) for row in rows)
@@ -162,10 +165,12 @@ def main():
             original = [float(row[f'{name}_original_qp_residual'])
                         for row in valid for name in row_keys if int(row[f'{name}_active'])]
             if original:
-                result['max_original_qp_residual_mps'] = max(original)
-                result['original_qp_violations'] = sum(value > args.violation_tolerance
-                                                       for value in original)
-        if speed_keys:
+                original_key = ('max_original_qp_residual_mps2' if temporal_mode
+                                else 'max_original_qp_residual_mps')
+                result[original_key] = max(original)
+                tolerance = args.acceleration_tolerance if temporal_mode else args.violation_tolerance
+                result['original_qp_violations'] = sum(value > tolerance for value in original)
+        if speed_keys and not temporal_mode:
             speeds = [(float(row[f'{name}_qp_next_robot_speed_mps']),
                        float(row[f'{name}_robot_budget_mps']))
                       for row in valid for name in row_keys if int(row[f'{name}_active'])]

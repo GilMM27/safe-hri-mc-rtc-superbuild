@@ -14,6 +14,7 @@ Sweep:
   DwellSeconds: 0.25
   MaxJointSpeedRadS: 1.0
   PostureStiffness: 25.0
+  PostureWeight: 10.0
   AutoStart: false
 SSMPFL:
   Enabled: true

@@ -15,6 +15,17 @@ endif()
 
 add_subdirectory(src)
 
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(ssm_pfl_tvm_test tests/ssm_pfl_tvm.cpp)
+  target_link_libraries(ssm_pfl_tvm_test PRIVATE mc_rtc::mc_control)
+  add_test(NAME ssm_pfl_tvm COMMAND ssm_pfl_tvm_test)
+  add_executable(kinova_tvm_smoke_test tests/kinova_tvm_smoke.cpp)
+  target_link_libraries(kinova_tvm_smoke_test PRIVATE KinovaSweepController mc_rtc::mc_control)
+  add_test(NAME kinova_tvm_smoke COMMAND kinova_tvm_smoke_test
+           ${CMAKE_CURRENT_SOURCE_DIR}/../smplh_playback/KinovaSweepController.ssm_pfl.example.yaml)
+endif()
+
 set(AROBASE "@")
 configure_file(
   etc/KinovaHoldController.in.yaml
@@ -31,3 +42,4 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/etc/KinovaSweepController.yaml
         DESTINATION ${MC_CONTROLLER_RUNTIME_INSTALL_PREFIX}/etc
 )
+

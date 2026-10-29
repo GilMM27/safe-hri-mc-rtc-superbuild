@@ -74,8 +74,8 @@ int main()
   const double finiteRate = ssm_pfl::pflSpeedRate(140, 75000, tinyMobility, -1e-4, 1e-12, 0.002);
   assert(near(finiteRate, -remainingPfl / 0.002));
   assert(ssm_pfl::barrierBound(finiteRate, -0.0087, 5.0, 0.1125, 0, 0, 0) > 0);
-  // The measured derivative on the failing right-forearm pair predicted
-  // negative mobility within one tick; use the next-step speed row instead.
+  // A derivative predicting zero mobility within one tick must use the
+  // temporal fallback rather than extrapolating the PFL speed rate.
   assert(!ssm_pfl::mobilityExtrapolationValid(3.2178674e-5, -0.0263035, 1e-12, 0.002));
   assert(ssm_pfl::mobilityExtrapolationValid(first.inverseMass, -0.1, 1e-12, 0.002));
   // At overlap with a violated speed limit, the derivative fallback asks
@@ -138,12 +138,23 @@ int main()
   const double movingBarrier = ssm_pfl::barrierBound(0.0, 0.0, 2.0, 0.2, 0.1, -0.15, -0.2);
   assert(near(frozenBarrier, 0.2));
   assert(near(movingBarrier, -0.3));
+  // On the first moving sample the derivative is unavailable. Retain its
+  // measured human approach in h even when the unknown rate is set to zero.
+  const double movingFallback = ssm_pfl::barrierBound(0.0, 0.0, 2.0, 0.2, 0.1, -0.15, 0.0);
+  assert(near(movingFallback, -0.1));
+  assert(movingBarrier < movingFallback && movingFallback < frozenBarrier);
+  // A barrier on relative speed can ask for robot retreat. The pointwise
+  // policy for the same fast incoming human instead floors its budget at zero.
+  assert(ssm_pfl::barrierBound(0.0, 0.0, 2.0, 0.1, 0.0, -0.2, 0.0) < 0.0);
+  assert(near(ssm_pfl::robotSpeedBudget(0.1, -0.2), 0.0));
   ssm_pfl::TemporalDerivative moving;
   moving.observe(1, 1.0, jacobian, velocity, first.inverseMass, -0.10, normal, local,
                  "link_geom", false, 0.1, 0.03, 0.3, 1e-12);
   moving.observe(2, 1.05, jacobian, velocity, first.inverseMass, -0.11, normal, local,
                  "link_geom", false, 0.1, 0.03, 0.3, 1e-12);
   assert(moving.valid && near(moving.humanApproachRate, -0.2));
+  assert(near(ssm_pfl::barrierBound(0.0, moving.beta, 2.0, 0.2, 0.1,
+                                  -0.11, moving.humanApproachRate), -0.22));
 
   // Human motion toward the robot tightens the robot acceleration bound;
   // motion away relaxes it. The next-step relative speed equals the limit at
