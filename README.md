@@ -136,8 +136,8 @@ cmake --build --preset relwithdebinfo
 ```
 
 The build installs the Kinova Gen3 model as `kinova` for `mc_mujoco`. Select a controller that is
-compatible with a 7-DoF arm and use a 1 ms controller timestep, as in the
-Kinova examples below:
+compatible with a 7-DoF arm and use a 1 ms controller timestep to match the
+Kinova MuJoCo model's physics step:
 
 ```yaml
 MainRobot: Kinova

@@ -11,9 +11,14 @@ not verified biomechanical parameters.
 ## Architecture and coordinates
 
 `KinovaSweepController` is the nominal posture-task controller at 1 ms. Its
-Tasks QP retains the contact, dynamics (including model joint/torque limits),
-and Kinova minimal self-collision constraint sets. SSM+PFL adds a fixed-size
-general inequality with one row slot for each of the 14 SMPL-H body regions paired
+Tasks QP has a posture task, SSM+PFL rows, and the controller's contact,
+dynamics, and self-collision constraint sets. The dynamics constraint also
+includes joint limits. mc_rtc may also load global constraint configuration.
+Enabling relaxation additionally installs hard acceleration bounds from an
+explicit research cap intersected with any model acceleration limits. The
+relaxation mode does not remove the existing joint, dynamics, contact, or
+self-collision constraints. SSM+PFL adds a fixed-size
+one-sided inequality with one row slot for each of the 14 SMPL-H body regions paired
 with each of the seven movable Kinova links (joints 1–7). The distance worker
 returns the closest geometry on each link for each region. The selected
 geometry's MuJoCo body name is mapped to the
@@ -38,13 +43,191 @@ closing = nᵀ(J qdot - vH)         [m/s]
 dt nᵀ J qddot <= vLimit - nᵀ(J qdot - vH) - dt nᵀJdot qdot
 ```
 
-The last inequality predicts next-step relative closing speed with current
+For frozen humans, the last inequality predicts next-step relative closing speed with current
 `n`, witness, sampled human velocity, and speed limit held constant for one
 controller step. Human motion toward the robot tightens the bound and can
 require robot retreat. It is not a separate protective-distance threshold.
+
+For `HumanMode: moving`, every region/link pair constrains only the robot
+point's next-step approach speed. Human approach is negative along
+`n`; the row budget is `b = max(0, vLimit + nᵀvH)`. With
+`vNext = nᵀJ qdot + dt(nᵀJ qddot + nᵀJdot qdot)`, the QP enforces
+`vNext <= b`. At contact, `vLimit` equals the pair's PFL limit.
+An approaching human faster than that limit makes `b = 0`, preventing
+positive robot approach at that point while allowing retreat. A slower or
+receding human restores the budget continuously. Other points and tangential
+motion remain free within their own constraints. Human motion can still make
+relative contact speed exceed PFL even while the robot point is stationary;
+the sampled relative-speed and force measurements retain that exceedance.
+If hard acceleration or collision limits prevent the next-step bound, the QP
+reports infeasibility unless explicit relaxation is enabled. Relaxed speed
+allowances and original-bound exceedance are logged separately.
+
+For frozen humans, set `SSMPFL.ConstraintMode: temporal_barrier` to anticipate a changing speed
+limit. For each region/link pair, the controller uses consecutive fresh distance
+samples to estimate the rate of directional mobility and of `nᵀJ`. With
+`h = vLimit - nᵀ(J qdot - vH)`, it adds a QP row
+
+```text
+nᵀJ qddot <= vLimitRate - beta + gamma h  [m/s²]
+beta = d(nᵀJ)/dt · qdot                   [m/s²]
+vLimitRate = dEffectiveRate/Tstop + vPFLRate
+```
+
+`dEffectiveRate` uses `nᵀ(vH - J qdot)` above the distance margin and zero
+below it. At the margin it uses the smaller one-sided rate.
+`vPFLRate` uses the sampled change in directional mobility to predict the
+change in the nonnegative PFL allowance over one controller step. This finite
+step difference avoids the singular derivative of `sqrt(w)` as mobility
+approaches zero. The
+derivative history is kept separately for every region/link pair, so a switch
+of the closest geometry does not mix the histories of different links.
+Startup, stale or repeated samples, overlap, and large witness or normal
+changes can invalidate a derivative. The controller also rejects a mobility
+derivative whose one-step extrapolation reaches zero, where the PFL-rate
+linearization is unreliable. When a pair's derivative is unavailable, frozen
+mode retains an acceleration barrier using the model-estimated distance-rate
+term and zero estimated PFL rate. Moving mode uses the pointwise speed rows
+above and does not require a human-approach derivative. The
+`derivative_fallback` log key applies to frozen temporal mode.
+The frozen fallback requests gradual recovery if speed is already over the
+limit; neither fallback guarantees a contact-force bound. Invalid distance
+snapshots or QP inputs still clear all rows and follow
+`HoldOnConstraintUnavailable`. The default `legacy` mode uses next-step speed
+rows for every pair.
+`BarrierGammaPerSecond`, `MaxDerivativeGapSeconds`, `MaxWitnessStepM`, and
+`MaxNormalStepRad` configure the estimate and are shown in the example YAML.
+The rate estimate and barrier are experimental and do not guarantee sampled
+speed-envelope satisfaction.
+
+## Opt-in minimum-violation recovery
+
+`Relaxation.Mode: two_stage_full_feasibility` retains the weighted per-pair
+Stage 1 slack and checks it against the complete Tasks QP. On a failed full
+solve, it temporarily disables only the SSM+PFL rows and solves without
+integrating the robot state. If the remaining hard constraints are feasible,
+that solution supplies a finite upper bound on the extra shared allowance
+needed for every active safety row. Up to two non-integrating probes
+reduce the bound, subject to a 0.5 ms refinement budget. The final solve uses
+the smallest verified feasible bound and is the only successful solve that
+advances the state. The allowance is approximate and may be larger than the
+minimum, especially when the time budget prevents refinement.
+
+This mode applies to moving pointwise speed, frozen legacy speed, and frozen
+temporal barrier rows. The extra allowance is in m/s for speed rows and m/s²
+for temporal rows. It is not capped: moving-mode `MaxStage2SlackMps` is only
+an exceedance threshold in this mode, logged by
+`SSMPFL_full_qp_exceeded_legacy_cap`. `SSMPFL_full_qp_extra_slack` records the
+shared amount beyond the per-pair `stage1_relaxation_physical` values; each
+pair's `relaxation_physical` records its final permitted allowance. If the hard-only QP fails, extra safety
+slack cannot fix it and the controller requests a hold. A solver failure on
+the final solve also requests a hold. This mode does not establish a 1 ms
+worst-case execution time or a physical safety guarantee.
+
+This experimental recovery mode is opt-in for both frozen and moving humans.
+For moving humans, Stage 1 uses one nonnegative slack per pair on the
+approach-side point-speed row: `vNext <= b + delta`. There is no PFL
+retreat-side speed row, so retreat remains subject to the other QP limits. If
+the full mc_rtc QP still fails because Stage 1 cannot see all dynamics and
+collision rows, Stage 2 retries with a shared allowance up to
+`MaxStage2SlackMps` (default 0.2 m/s). The first feasible full QP command is used once; successful QP
+solves advance the robot state, so the controller does not tighten and resolve
+again in the same tick. This recovery is bounded feasibility search, not a
+minimum-violation solution. It logs the full bound expansion and original
+point-speed residual, even when the solved command uses less than the allowed
+slack. Failed intermediate probes do not produce QP error messages; a final
+failure remains an error and requests the configured posture hold.
+
+The per-pair approach slack, original residual, predicted robot speed, and QP
+status make that exception visible. The `retreat_relaxation_mps` and
+`retreat_relaxed_pairs` log fields remain zero because no retreat row is present.
+If the approach row still conflicts with hard acceleration, dynamics, or collision
+limits after recovery, the QP fails and the controller reports it.
+
+Set `SSMPFL.Relaxation.Enabled: true` with `Mode: two_stage_regularized` to
+retain all active pair rows when their acceleration demands conflict. The
+default remains hard enforcement. The Tasks backend fixes its decision vector
+to robot acceleration and contact forces, so the controller runs a separate
+eigen-qld QP before the ordinary mc_rtc solve. Its fixed pair index is
+`7 * region_index + link_index` and its variables are the seven joint
+accelerations and 98 normalized pair slacks. For an active pair, the first QP
+uses
+
+```text
+A_i qddot - scale_i z_i <= b_i,   z_i >= 0,   delta_i = scale_i z_i
+minimize 1/2 sum_i weight_i z_i² + epsilon/2 ||qddot||²
+```
+
+The inactive pair's slack is fixed to zero and its row is disabled. A first
+feasibility solve applies the original rows and fixes every slack at zero when
+that problem is feasible. Otherwise the relaxation QP minimizes the displayed
+objective under the configured acceleration bounds. The ordinary mc_rtc QP
+then optimizes its existing posture task with
+each approach row capped by `A_i qddot <= b_i + delta_i + Stage2Tolerance` when Stage 1
+needed relaxation. A feasible original-row solve uses `A_i qddot <= b_i`
+without a tolerance expansion. Thus the
+posture task cannot add approach-side violation beyond that explicit tolerance on each pair.
+Both stages use one robot state and one set of pair rows; only the second solve
+updates the robot command.
+The Tasks row is multiplied by `1/max(0.001, ||A_i||)` in relaxation mode to
+improve QLD conditioning. Stage 1 and all slack/residual logs retain the
+original physical units; both sides of the Stage 2 inequality receive the
+same multiplier.
+
+The Kinova model in the tested installation reports infinite acceleration
+limits. `Relaxation.MaxAccelerationRadS2` is therefore required when enabling
+this mode; it intersects the model acceleration limits and is applied in both
+QPs. The example's 10 rad/s² is a research setting, not a measured actuator
+capability. Calibrate it before interpreting the command as physically
+admissible. The auxiliary Stage 1 QP currently includes the explicit
+acceleration box and SSM+PFL rows, but does not mirror the controller's
+dynamics, joint, contact, or self-collision rows. Stage 1 success therefore
+does not prove that the ordinary Tasks QP in Stage 2 is feasible. A Stage 2
+failure remains possible even with zero or positive pair slack.
+
+This is **two-stage regularized priority**, not an exact lexicographic
+minimum of slack alone: eigen-qld requires a positive-definite QP Hessian, so
+the small configurable acceleration tie breaker can alter the optimum when
+zero slack is impossible. The first feasibility solve preserves exact hard
+enforcement when the original rows are feasible. `Stage2Tolerance` also allows
+a small additional physical-unit row violation. These two approximations are
+reported rather than described as strict priority. The fallback remains
+active for invalid or stale samples, infeasible model bounds, and solver
+failure. This mode rejects additional mc_rtc global contacts, collision, and
+constraint sets at construction because their hard rows cannot be mirrored in
+the auxiliary QP. It does not turn a posture hold into a verified emergency
+stop.
+
+For `temporal_barrier`, `delta` and `Stage2Tolerance` are in m/s² and the
+relaxed barrier condition is `hdot + gamma*h >= -delta`. For `legacy`, the
+actual row is multiplied by `dt`, so they are in m/s. Moving pointwise
+approach slack and the Stage 2 retry cap are also in m/s. `DefaultScale` has the
+same respective units, and `delta/scale` is dimensionless. Default weights
+are equal for all pairs; optional `Relaxation.Regions.<region>.Weight` and
+`.Scale` need measured justification. No finite upper bound is placed on an
+active slack. An upper bound could make the recovery QP infeasible again.
+`ActivationTolerance` and `RecoveryTolerance` apply only to reporting
+hysteresis, not constraints. A negative logged `barrier_mps` means the current
+speed exceeds the chosen envelope; positive `relaxation_physical` means the
+requested derivative condition was relaxed. Either can occur without the
+other. Per-pair logs include original and relaxed QP residuals, weight, scale,
+slack, derivative status, and sample age. Global logs expose relaxed pair
+count, largest normalized slack, objective, solver statuses, timings, and
+recovery status. Positive slack is not evidence of safety or a guarantee of
+eventual recovery or minimum collision severity.
+
+## Pair diagnostics and monitoring
+
+For `temporal_barrier`, `SSMPFLPair_<region>_<link>_acceleration_residual_mps2`
+reports the solved QP row residual. The same prefix exposes derivative
+validity, feature switches, the limit rate, and the barrier value. The
+`predicted_residual_mps` key is NaN in temporal mode because its units would
+otherwise be misleading. `analyze_ssm_pfl.py` reports acceleration residuals
+separately from sampled speed residuals.
 Every selected region row constrains the whole joint-acceleration vector.
 Region retreat does not disable any other region's row. It can redistribute
-joint motion and change the nominal path. No slack is added to these rows.
+joint motion and change the nominal path. In default hard mode, no slack is
+added to these rows.
 The Tasks backend is required and checked at controller construction.
 `SSMPFL.ConstrainWhileHolding: false` keeps distance and speed monitoring active
 while the sweep waits for Start or after Stop, but adds no SSM+PFL QP rows in
@@ -74,11 +257,9 @@ the full point speed at the arm. The logged
 `SSMPFL_<region>_actual_tangential_speed_mps` expose this gap. A test fixture
 at reported torso overlap measured 0.216 m/s relative point speed, including
 0.197 m/s tangential speed, while normal closing speed was -0.073 m/s and the
-normal-direction PFL limit was 0.156 m/s. Those two PFL/speed numbers use
-different directions and should not be compared as a force guarantee; the
-sample shows why the normal row did not slow a graze. Experimental Cartesian
-and travel-direction QP rows slowed it but later made the hard QP infeasible,
-so they were not retained. A feasible near-contact speed branch and earlier
+normal-direction PFL limit was 0.156 m/s. Those PFL/speed values use different
+directions and do not establish a force guarantee. A feasible near-contact
+speed branch and earlier
 trajectory slowdown remain required before this behavior can be called a
 complete SSM+PFL controller.
 
@@ -101,7 +282,9 @@ the measured posture of all seven joints.
 Set `SMPLH_FREEZE_FRAME=0` to hold one pose, and choose `HumanMode: frozen`.
 The controller rejects a nonfrozen snapshot in this mode.
 For moving playback, omit that environment variable and choose
-`HumanMode: moving`. The visual SMPL-H surface is a deforming vertex cache;
+`HumanMode: moving`. Moving mode uses pointwise speed bounds regardless of an
+older `ConstraintMode` setting; `pointwise_speed` is the explicit setting in
+the example. The visual SMPL-H surface is a deforming vertex cache;
 the MuJoCo skeleton joint velocities are set to zero by playback and do not
 describe surface material-point motion. The bridge therefore calculates a
 backward finite difference for each **identified mesh vertex** from the
@@ -110,8 +293,11 @@ the velocity of the nearest material vertex in the selected region to the
 current human witness. It never differences successive closest-point
 coordinates. There is no filtering. The estimate is quantized to the cache
 frame period, then delayed by asynchronous distance processing and sampled
-every `SMPLH_DISTANCE_EVERY` physics steps (25 by default).
-It is invalid on the initial and wrap frames. A nearest vertex need not have
+every `SMPLH_DISTANCE_EVERY` physics steps (25 by default, 25 ms at 1 ms).
+It is invalid on the initial and wrap frames. With
+`HoldOnConstraintUnavailable: true`, the controller temporarily pauses the
+sweep for those frames and resumes it when a valid velocity sample arrives.
+A nearest vertex need not have
 the velocity of an interior triangle or convex-hull witness; this is a major
 moving-mode approximation.
 
@@ -202,8 +388,9 @@ so inspect its Sweep values when reproducing a run. For isolated headless
 validation, `ClearGlobalPluginPath: true` prevents the optional ROS autoload.
 Use `mc_bin_utils show <log.bin>` to list signals and
 `python3 smplh_playback/analyze_ssm_pfl.py <log.bin>` to summarize sampled
-predicted and observed relative-closing residuals. A positive predicted
-residual exceeds the relative-speed QP bound; a positive observed residual
+predicted point-speed and observed relative-closing residuals. In moving mode,
+a positive predicted residual exceeds the robot approach-speed bound;
+a positive observed residual
 means human and robot closed faster than that bound. The sample age and per-region witness coordinates,
 velocities, inverse mass, limits, and residuals are logged in the bin file.
 Each region/link pair also logs distance, closing speed, limit, residuals, and
