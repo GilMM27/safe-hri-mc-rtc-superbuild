@@ -1,11 +1,14 @@
 #include "KinovaSweepController.h"
 #include "SSMPFLMath.h"
+#include "SSMPFLTVMProbe.h"
 
 #include <mc_rtc/gui/Button.h>
 #include <mc_rtc/gui/ComboInput.h>
 #include <mc_rtc/gui/Label.h>
 #include <mc_rtc/gui/plot.h>
-#include <mc_solver/TasksQPSolver.h>
+#include <mc_tvm/Robot.h>
+#include <mc_rbdyn/RobotLoader.h>
+#include <tvm/solver/defaultLeastSquareSolver.h>
 #include <RBDyn/Jacobian.h>
 #include <RBDyn/MultiBodyConfig.h>
 
@@ -34,17 +37,37 @@ double smoothStep(double u)
   u = std::max(0.0, std::min(1.0, u));
   return u * u * u * (10.0 + u * (-15.0 + 6.0 * u));
 }
+
+mc_rtc::Configuration managedSweepConfig(const mc_rtc::Configuration & config)
+{
+  mc_rtc::Configuration managed = config;
+  if(managed.has("Managed"))
+  {
+    if(!managed("Managed", false))
+      mc_rtc::log::error_and_throw("Kinova sweep requires FSM Managed: true for its internal sweep phases");
+  }
+  else managed.add("Managed", true);
+  return managed;
+}
 } // namespace
 
 KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
                                              double dt,
                                              const mc_rtc::Configuration & config)
-: mc_control::MCController(rm, dt)
+: mc_control::fsm::Controller(rm, dt, managedSweepConfig(config), Backend::TVM)
 {
-  solver().addConstraintSet(contactConstraint);
+  // Unlike MCController's single-robot constructor, the FSM base does not load ground.
+  loadRobot(mc_rbdyn::RobotLoader::get_robot_module("env/ground"), "ground");
+  solver().removeConstraintSet(dynamicsConstraint);
+  dynamicsConstraint = mc_rtc::unique_ptr<mc_solver::DynamicsConstraint>(
+      new mc_solver::DynamicsConstraint(robots(), 0, {diPercent_, dsPercent_, 0.0, 1.2, 100.0}, velPercent_, true));
   solver().addConstraintSet(dynamicsConstraint);
   solver().addConstraintSet(selfCollisionConstraint);
-  solver().addTask(postureTask);
+  // The FSM owns an idle posture task and changes its weight on reset/run.
+  // Remove it from the solver so the sweep has one independently weighted task.
+  auto fsmPostureTask = getPostureTask(robot().name());
+  if(!fsmPostureTask) mc_rtc::log::error_and_throw("Kinova sweep requires an actuated robot posture task");
+  solver().removeTask(fsmPostureTask);
   solver().setContacts({});
   jointIndex_ = robot().jointIndexByName("joint_1");
   if(config.has("Sweep"))
@@ -55,11 +78,13 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
     sweep("DwellSeconds", dwellSeconds_);
     sweep("MaxJointSpeedRadS", maxJointSpeed_);
     sweep("PostureStiffness", postureStiffness_);
+    sweep("PostureWeight", sweepPostureWeight_);
     sweep("AutoStart", autoStart_);
   }
   if(!std::isfinite(amplitude_) || !std::isfinite(segmentSeconds_) || !std::isfinite(dwellSeconds_)
      || !std::isfinite(maxJointSpeed_) || !std::isfinite(postureStiffness_) || amplitude_ == 0.0
      || segmentSeconds_ <= 0.0 || dwellSeconds_ < 0.0 || maxJointSpeed_ <= 0.0 || postureStiffness_ <= 0.0
+     || !std::isfinite(sweepPostureWeight_) || sweepPostureWeight_ <= 0.0
      || amplitude_ <= robot().ql().at(jointIndex_).at(0)
      || amplitude_ >= robot().qu().at(jointIndex_).at(0)
      || 0.0 <= robot().ql().at(jointIndex_).at(0))
@@ -71,7 +96,10 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
   {
     mc_rtc::log::error_and_throw("KinovaSweepController: joint_1 has no positive velocity limit");
   }
-  postureTask->stiffness(postureStiffness_);
+  postureTask = std::make_shared<mc_tasks::PostureTask>(solver(), robot().robotIndex(),
+                                                       postureStiffness_, sweepPostureWeight_);
+  postureTask->name("KinovaSweepPosture");
+  solver().addTask(postureTask);
 
   pairLogs_.resize(regions.size());
   linkPairLogs_.resize(regions.size() * links.size());
@@ -84,8 +112,6 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
     {
       safety("HoldOnConstraintUnavailable", holdOnConstraintUnavailable_);
       safety("ConstrainWhileHolding", constrainWhileHolding_);
-      if(solver().backend() != mc_solver::QPSolver::Backend::Tasks)
-        mc_rtc::log::error_and_throw("KinovaSweepController SSM+PFL requires the Tasks QP backend");
       std::string mode = "frozen";
       safety("HumanMode", mode);
       if(mode != "frozen" && mode != "moving")
@@ -95,8 +121,17 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
       safety("ConstraintMode", constraintMode);
       if(constraintMode != "legacy" && constraintMode != "temporal_barrier" && constraintMode != "pointwise_speed")
         mc_rtc::log::error_and_throw("SSMPFL.ConstraintMode must be legacy, temporal_barrier or pointwise_speed");
-      // Moving humans always use the continuous pointwise bound, including old configurations.
-      temporalBarrier_ = !movingHuman_ && constraintMode == "temporal_barrier";
+      // Preserve the pointwise default for moving humans; temporal barriers
+      // are selected explicitly and use relative closing speed in either mode.
+      temporalBarrier_ = constraintMode == "temporal_barrier";
+      if(safety.has("Weight"))
+      {
+        safety("Weight", softSafetyWeight_);
+        if(!std::isfinite(softSafetyWeight_) || softSafetyWeight_ <= 0)
+          mc_rtc::log::error_and_throw("SSMPFL.Weight must be a positive finite value");
+      }
+      if(safety.has("Scale"))
+        mc_rtc::log::error_and_throw("SSMPFL.Scale is no longer supported; adjust SSMPFL.Weight directly");
       safety("BarrierGammaPerSecond", barrierGamma_);
       safety("MaxDerivativeGapSeconds", maxDerivativeGap_);
       safety("MaxWitnessStepM", maxWitnessStep_);
@@ -141,6 +176,8 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
         recovery("Enabled", relaxationEnabled_);
         if(relaxationEnabled_)
         {
+          if(softSafetyWeight_ > 0)
+            mc_rtc::log::error_and_throw("SSMPFL.Weight cannot be combined with SSMPFL.Relaxation.Enabled");
           std::string mode = "two_stage_regularized";
           recovery("Mode", mode);
           if(mode != "two_stage_regularized" && mode != "two_stage_full_feasibility")
@@ -149,7 +186,8 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
           recovery("ActivationTolerance", relaxationActivationTolerance_);
           recovery("RecoveryTolerance", relaxationRecoveryTolerance_);
           recovery("Stage2Tolerance", relaxationStage2Tolerance_);
-          if(movingHuman_) recovery("MaxStage2SlackMps", relaxationMaxStage2Slack_);
+          if(movingHuman_ && !temporalBarrier_)
+            recovery("MaxStage2SlackMps", relaxationMaxStage2Slack_);
           recovery("AccelerationRegularization", accelerationRegularization_);
           recovery("MaxAccelerationRadS2", relaxationMaxAcceleration_);
           double defaultScale = temporalBarrier_ ? 1.0 : 0.01;
@@ -159,7 +197,8 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
              || !std::isfinite(relaxationRecoveryTolerance_) || relaxationRecoveryTolerance_ < 0
              || relaxationRecoveryTolerance_ >= relaxationActivationTolerance_
              || !std::isfinite(relaxationStage2Tolerance_) || relaxationStage2Tolerance_ < 0
-             || (movingHuman_ && (!std::isfinite(relaxationMaxStage2Slack_) || relaxationMaxStage2Slack_ <= 0))
+             || (movingHuman_ && !temporalBarrier_
+                 && (!std::isfinite(relaxationMaxStage2Slack_) || relaxationMaxStage2Slack_ <= 0))
              || !std::isfinite(accelerationRegularization_) || accelerationRegularization_ <= 0)
             mc_rtc::log::error_and_throw("Invalid SSMPFL relaxation settings");
           if(!std::isfinite(relaxationMaxAcceleration_) || relaxationMaxAcceleration_ <= 0)
@@ -188,15 +227,16 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
           }
           relaxation_.reset(new SSMPFLRelaxation(robot().mb().nrDof(),
                                                 static_cast<int>(linkPairLogs_.size())));
-          accelerationBounds_.reset(new SSMPFLAccelerationBounds(0, robot().mb().nrDof()));
-          mc_solver::TasksQPSolver::from_solver(solver()).addConstraint(accelerationBounds_.get());
+          accelerationBounds_.reset(new SSMPFLAccelerationBounds(robot().tvmRobot().alphaD(), robot().mb().nrDof()));
+          accelerationBounds_->addToSolver(mc_solver::TVMQPSolver::from_solver(solver()));
         }
       }
-      safetyConstraint_.reset(new SSMPFLConstraint(0, robot().mb().nrDof(),
-                                                  static_cast<int>(linkPairLogs_.size()), temporalBarrier_,
-                                                  relaxationEnabled_));
+      safetyConstraint_.reset(new SSMPFLConstraint(robot().tvmRobot().alphaD(), robot().mb().nrDof(),
+                                                  static_cast<int>(linkPairLogs_.size()),
+                                                  relaxationEnabled_ || softSafetyWeight_ > 0,
+                                                  softSafetyWeight_));
       inertia_.reset(new rbd::ForwardDynamics(robot().mb()));
-      mc_solver::TasksQPSolver::from_solver(solver()).addConstraint(safetyConstraint_.get());
+      safetyConstraint_->addToSolver(mc_solver::TVMQPSolver::from_solver(solver()));
     }
   }
 
@@ -229,10 +269,9 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
                           + " s old; QP next " + qpAge;
                     }),
                     mc_rtc::gui::Label("Mode", [this]() {
-                      return !safetyEnabled_ ? std::string("disabled") : movingHuman_ ?
-                          std::string("moving pointwise speed") : temporalBarrier_ ?
+                      return !safetyEnabled_ ? std::string("disabled") : temporalBarrier_ ?
                           std::string(movingHuman_ ? "moving temporal barrier" : "frozen temporal barrier")
-                          : movingHuman_ ? std::string("moving legacy") : std::string("frozen legacy");
+                          : movingHuman_ ? std::string("moving pointwise speed") : std::string("frozen legacy");
                     }),
                     mc_rtc::gui::Label("State", [this]() {
                       if(!solverSuccess_) return std::string("QP failed");
@@ -337,9 +376,12 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
   logger().addLogEntry("SSMPFL_solver_seconds", [this]() { return solver().solveTime(); });
   logger().addLogEntry("SSMPFL_sample_age_seconds", [this]() { return sampleAge_; });
   logger().addLogEntry("SSMPFL_constraint_mode", [this]() {
-    return movingHuman_ ? std::string("pointwise_speed") : temporalBarrier_ ? std::string("temporal_barrier") : std::string("legacy");
+    return temporalBarrier_ ? std::string("temporal_barrier") : movingHuman_ ? std::string("pointwise_speed") : std::string("legacy");
   });
   logger().addLogEntry("SSMPFL_relaxation_enabled", [this]() { return relaxationEnabled_; });
+  logger().addLogEntry("SSMPFL_soft_weight", [this]() { return softSafetyWeight_; });
+  logger().addLogEntry("SSMPFL_soft_violating_pairs", [this]() { return softViolatingPairs_; });
+  logger().addLogEntry("SSMPFL_soft_max_violation", [this]() { return softMaxViolation_; });
   logger().addLogEntry("SSMPFL_recovery_mode", [this]() { return recoveryMode_; });
   logger().addLogEntry("SSMPFL_relaxed_pairs", [this]() { return relaxedPairs_; });
   logger().addLogEntry("SSMPFL_retreat_relaxed_pairs", [this]() { return retreatRelaxedPairs_; });
@@ -432,6 +474,7 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
     logger().addLogEntry(prefix + "barrier_mps", [this, i]() { return linkPairLogs_[i].barrier; });
     logger().addLogEntry(prefix + "original_envelope_violated", [this, i]() { return linkPairLogs_[i].barrier < 0; });
     logger().addLogEntry(prefix + "relaxation_physical", [this, i]() { return linkPairLogs_[i].relaxation; });
+    logger().addLogEntry(prefix + "soft_slack_physical", [this, i]() { return linkPairLogs_[i].softSlack; });
     logger().addLogEntry(prefix + "stage1_relaxation_physical", [this, i]() { return linkPairLogs_[i].stage1Relaxation; });
     logger().addLogEntry(prefix + "retreat_relaxation_mps", [this, i]() { return linkPairLogs_[i].retreatRelaxation; });
     logger().addLogEntry(prefix + "relaxation_normalized", [this, i]() {
@@ -459,9 +502,9 @@ KinovaSweepController::KinovaSweepController(mc_rbdyn::RobotModulePtr rm,
 KinovaSweepController::~KinovaSweepController()
 {
   if(safetyConstraint_)
-    mc_solver::TasksQPSolver::from_solver(solver()).removeConstraint(safetyConstraint_.get());
+    safetyConstraint_->removeFromSolver(mc_solver::TVMQPSolver::from_solver(solver()));
   if(accelerationBounds_)
-    mc_solver::TasksQPSolver::from_solver(solver()).removeConstraint(accelerationBounds_.get());
+    accelerationBounds_->removeFromSolver(mc_solver::TVMQPSolver::from_solver(solver()));
 }
 
 void KinovaSweepController::addSpeedPlot()
@@ -492,7 +535,7 @@ void KinovaSweepController::updateSpeedPlot()
   if(!pair.sampledVelocityValid) return;
   speedPlot_.current = pair.robotSpeed;
   speedPlot_.sampled = pair.combinedLimit + pair.actualResidual + pair.humanSpeed;
-  speedPlot_.limit = pair.robotBudget;
+  speedPlot_.limit = temporalBarrier_ ? pair.combinedLimit + pair.humanSpeed : pair.robotBudget;
   speedPlot_.sampleTime = safetyTime_;
   if(solverSuccess_ && pair.active)
   {
@@ -505,7 +548,7 @@ void KinovaSweepController::updateSpeedPlot()
 
 void KinovaSweepController::reset(const mc_control::ControllerResetData & reset_data)
 {
-  mc_control::MCController::reset(reset_data);
+  mc_control::fsm::Controller::reset(reset_data);
   startRequested_ = autoStart_;
   autoStartPending_ = autoStart_;
   stopRequested_ = false;
@@ -518,6 +561,8 @@ void KinovaSweepController::reset(const mc_control::ControllerResetData & reset_
   fallbackReason_.clear();
   recoveryMode_ = false;
   relaxedPairs_ = 0;
+  softViolatingPairs_ = 0;
+  softMaxViolation_ = 0;
   retreatRelaxedPairs_ = 0;
   relaxationObjective_ = stage1Seconds_ = stage2Seconds_ = 0;
   stage2RetryCap_ = 0;
@@ -578,6 +623,7 @@ void KinovaSweepController::beginSegment(Phase phase, double goal)
 
 bool KinovaSweepController::run()
 {
+  mc_control::fsm::Controller::run(mc_solver::FeedbackType::SkipQP);
   safetyTime_ += solver().dt();
   // Stop wins if both buttons were pressed since the previous controller tick.
   if(stopRequested_.exchange(false))
@@ -618,6 +664,8 @@ bool KinovaSweepController::run()
   if(safetyEnabled_ && !updateSafetyConstraint(!monitorOnly_) && holdOnConstraintUnavailable_)
     stopSweepAtAvailableJoint1();
   relaxedPairs_ = 0;
+  softViolatingPairs_ = 0;
+  softMaxViolation_ = 0;
   retreatRelaxedPairs_ = 0;
   relaxationObjective_ = stage1Seconds_ = stage2Seconds_ = 0;
   stage2RetryCap_ = 0;
@@ -653,7 +701,7 @@ bool KinovaSweepController::run()
     std::vector<bool> active(linkPairLogs_.size(), false);
     for(size_t i = 0; i < active.size(); ++i) active[i] = linkPairLogs_[i].active;
     const auto stage1Start = std::chrono::steady_clock::now();
-    // One slack per pair expands only the approach-side point-speed row.
+    // One slack per pair expands its safety upper bound, in the row's units.
     const bool stage1OK = relaxation_->solve(safetyConstraint_->rows(), safetyConstraint_->bounds(),
                                              active, relaxationWeights_, relaxationScales_, lower, upper,
                                              accelerationRegularization_);
@@ -675,10 +723,6 @@ bool KinovaSweepController::run()
       linkPairLogs_[i].relaxation = delta;
       linkPairLogs_[i].stage1Relaxation = delta;
       safetyConstraint_->relax(static_cast<int>(i), delta + stage2ToleranceApplied_);
-      if(movingHuman_)
-      {
-        linkPairLogs_[i].retreatRelaxation = 0;
-      }
       if(delta > relaxationActivationTolerance_) ++relaxedPairs_;
     }
   }
@@ -689,19 +733,29 @@ bool KinovaSweepController::run()
                              Eigen::VectorXd::Constant(dofs, 1e12));
   }
   const auto stage2Start = std::chrono::steady_clock::now();
-  // A successful solver().run integrates state. Raw Tasks probes below do not.
+  // A successful solver().run integrates state. Direct TVM probes below do not.
   updateContacts();
   solverSuccess_ = solver().run(mc_solver::FeedbackType::None);
   stage2Seconds_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - stage2Start).count();
   stage2Status_ = solverSuccess_ ? "success" : "QP failure";
   if(!solverSuccess_ && fullQPRecovery_ && relaxationEnabled_ && activePairs_ > 0)
   {
-    // The first solve included every hard constraint but did not integrate on
-    // failure. A raw Tasks solve probes the same constraints without changing
-    // the controller state or advancing its posture task.
-    auto & tasksSolver = mc_solver::TasksQPSolver::from_solver(solver());
-    auto probe = [this, &tasksSolver]() {
-      return tasksSolver.solver().solveNoMbcUpdate(robots().mbs(), robots().mbcs());
+    // Probe the same TVM problem without running the controller lifecycle or
+    // integrating the robot. TVM writes solution variables even on failure,
+    // so restore all of them after each probe.
+    auto & problem = mc_solver::TVMQPSolver::from_solver(solver()).problem();
+    tvm::scheme::WeightedLeastSquares probeSolver(tvm::solver::DefaultLSSolverOptions{});
+    Eigen::VectorXd probeAcceleration;
+    auto probe = [this, &problem, &probeSolver, &probeAcceleration]() {
+      try
+      {
+        return ssm_pfl::probeTVM(problem, probeSolver, robot().tvmRobot().alphaD(), probeAcceleration);
+      }
+      catch(const std::exception & e)
+      {
+        mc_rtc::log::warning("TVM full-QP feasibility probe failed: {}", e.what());
+        return false;
+      }
     };
     safetyConstraint_->suspend(true);
     ++stage2RetryAttempts_;
@@ -713,7 +767,7 @@ bool KinovaSweepController::run()
     }
     else
     {
-      const Eigen::VectorXd hardCandidate = tasksSolver.solver().alphaDVec(0);
+      const Eigen::VectorXd hardCandidate = probeAcceleration;
       if(!hardCandidate.allFinite())
       {
         stage2Status_ = "nonfinite hard-only QP solution";
@@ -773,7 +827,8 @@ bool KinovaSweepController::run()
               safetyConstraint_->setAllowance(static_cast<int>(i), linkPairLogs_[i].relaxation
                                                 + stage2ToleranceApplied_);
               fullQPExceededLegacyCap_ = fullQPExceededLegacyCap_ ||
-                  (movingHuman_ && linkPairLogs_[i].relaxation > relaxationMaxStage2Slack_);
+                  (movingHuman_ && !temporalBarrier_
+                   && linkPairLogs_[i].relaxation > relaxationMaxStage2Slack_);
               if(linkPairLogs_[i].relaxation > relaxationActivationTolerance_) ++relaxedPairs_;
               relaxationObjective_ += 0.5 * relaxationWeights_[i]
                   * std::pow(linkPairLogs_[i].relaxation / relaxationScales_[i], 2);
@@ -786,7 +841,8 @@ bool KinovaSweepController::run()
     }
     stage2Seconds_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - stage2Start).count();
   }
-  else if(!solverSuccess_ && movingHuman_ && relaxationEnabled_ && activePairs_ > 0)
+  else if(!solverSuccess_ && movingHuman_ && !temporalBarrier_
+          && relaxationEnabled_ && activePairs_ > 0)
   {
     // Stage 1 sees model acceleration bounds but not all mc_rtc dynamics and
     // collision rows. Retry the full QP with bounded approach-speed slack.
@@ -889,7 +945,7 @@ bool KinovaSweepController::run()
                          "closing {} m/s, limit {} m/s, sample age {} s",
                          activePairs_, pairLabel(limitingPair_), pair.distance, pair.closingSpeed,
                          pair.combinedLimit, sampleAge_);
-      if(movingHuman_)
+      if(movingHuman_ && !temporalBarrier_)
         mc_rtc::log::error("Pointwise robot speed QP infeasible with {} and other hard constraints; "
                            "budget {} m/s at {}",
                            fullQPRecovery_ ? "full-QP feasibility recovery" : relaxationEnabled_
@@ -925,14 +981,21 @@ bool KinovaSweepController::run()
       if(linkPairLogs_[i].active)
       {
         linkPairLogs_[i].predictedResidual = safetyConstraint_->residual(static_cast<int>(i), acceleration);
-        if(movingHuman_)
+        if(softSafetyWeight_ > 0)
+        {
+          linkPairLogs_[i].softSlack = safetyConstraint_->softSlack(static_cast<int>(i));
+          if(linkPairLogs_[i].predictedResidual > 1e-7) ++softViolatingPairs_;
+          softMaxViolation_ = std::max(softMaxViolation_,
+                                       std::max(0.0, linkPairLogs_[i].predictedResidual));
+        }
+        if(movingHuman_ && !temporalBarrier_)
           linkPairLogs_[i].predictedRobotSpeed = linkPairLogs_[i].robotBudget
               + safetyConstraint_->upperResidual(static_cast<int>(i), acceleration)
               + linkPairLogs_[i].relaxation + stage2ToleranceApplied_;
         else if(!temporalBarrier_)
           linkPairLogs_[i].predictedRobotSpeed = linkPairLogs_[i].combinedLimit
               + linkPairLogs_[i].humanSpeed + linkPairLogs_[i].predictedResidual;
-        if(movingHuman_)
+        if(movingHuman_ && !temporalBarrier_)
         {
           const double originalUpper = safetyConstraint_->upperResidual(static_cast<int>(i), acceleration)
               + linkPairLogs_[i].relaxation + stage2ToleranceApplied_;
@@ -945,6 +1008,9 @@ bool KinovaSweepController::run()
               + linkPairLogs_[i].relaxation + stage2ToleranceApplied_;
           linkPairLogs_[i].relaxedResidual = linkPairLogs_[i].originalResidual - linkPairLogs_[i].relaxation;
         }
+        if(temporalBarrier_)
+          linkPairLogs_[i].predictedRobotSpeed = linkPairLogs_[i].robotSpeed + dt *
+              (linkPairLogs_[i].beta + linkPairLogs_[i].qpBound + linkPairLogs_[i].originalResidual);
         if(linkPairLogs_[i].inverseMass > minMobility_)
         {
           linkPairLogs_[i].binding = linkPairLogs_[i].predictedResidual >= (temporalBarrier_ ? -0.01 : -0.001);
@@ -975,7 +1041,7 @@ bool KinovaSweepController::run()
       const bool wasRecovery = recoveryMode_;
       if(recoveryMode_) recoveryMode_ = largest > relaxationRecoveryTolerance_;
       else recoveryMode_ = largest > relaxationActivationTolerance_;
-      if(movingHuman_ && recoveryMode_ && !wasRecovery
+      if(movingHuman_ && !temporalBarrier_ && recoveryMode_ && !wasRecovery
          && safetyTime_ - recoveryWarningTime_ >= 5.0)
       {
         mc_rtc::log::warning("Moving-human pointwise PFL recovery active: approach speed bound relaxed; "
@@ -1195,10 +1261,10 @@ bool KinovaSweepController::updateSafetyConstraint(bool applyConstraint)
     if(!std::isfinite(log.actualResidual)) return fail("invalid simulated point speed at " + pair);
     log.actualViolation = log.actualResidual > maxActualResidual_;
     if(log.actualViolation) ++actualViolationPairs_;
-    // A selected point can have zero mobility along this direction. A negative
-    // speed allowance would make its zero-acceleration row impossible.
-    // Keep the measured violation visible, but do not add an unachievable row.
-    if(limit.inverseMass <= minMobility_ && !movingHuman_)
+    // A selected point can have zero mobility along this direction. A
+    // relative-speed or temporal row can then demand impossible acceleration.
+    // Keep the measured violation visible, but do not add that row.
+    if(limit.inverseMass <= minMobility_ && (!movingHuman_ || temporalBarrier_))
     {
       if(temporalBarrier_) derivatives_[i] = ssm_pfl::TemporalDerivative{};
       log.uncontrollable = true;
@@ -1212,22 +1278,7 @@ bool KinovaSweepController::updateSafetyConstraint(bool applyConstraint)
       continue;
     }
     double bound;
-    if(movingHuman_)
-    {
-      const double drift = (n.transpose() * fullDot.bottomRows(3) * qdot).value();
-      try
-      {
-        const double upperBound = ssm_pfl::pointSpeedUpperBound(log.robotBudget, robotApproach,
-                                                                drift, solver().dt());
-        log.beta = drift;
-        bound = upperBound;
-        if(applyConstraint)
-          safetyConstraint_->set(static_cast<int>(i), solver().dt() * directional,
-                                 upperBound);
-      }
-      catch(const std::exception &) { return fail("invalid pointwise speed row at " + pair); }
-    }
-    else if(temporalBarrier_)
+    if(temporalBarrier_)
     {
       auto & state = derivatives_[i];
       state.observe(snapshot->sequence, snapshot->sample_simulation_time, directional, qdot,
@@ -1249,7 +1300,7 @@ bool KinovaSweepController::updateSafetyConstraint(bool applyConstraint)
           log.speedRate = ssm_pfl::combinedSpeedRate(sample->distance, parameters.margin,
                                                      log.distanceRate, 0.0, stopTime_);
           bound = ssm_pfl::barrierBound(log.speedRate, drift, barrierGamma_,
-                                       limit.combinedSpeed, robotApproach, 0.0, 0.0);
+                                       limit.combinedSpeed, robotApproach, humanApproach, 0.0);
         }
         catch(const std::exception &) { return fail("invalid derivative fallback bound at " + pair); }
       }
@@ -1268,6 +1319,21 @@ bool KinovaSweepController::updateSafetyConstraint(bool applyConstraint)
       }
       catch(const std::exception &) { return fail("invalid temporal barrier at " + pair); }
       if(applyConstraint) safetyConstraint_->set(static_cast<int>(i), directional, bound);
+    }
+    else if(movingHuman_)
+    {
+      const double drift = (n.transpose() * fullDot.bottomRows(3) * qdot).value();
+      try
+      {
+        const double upperBound = ssm_pfl::pointSpeedUpperBound(log.robotBudget, robotApproach,
+                                                                drift, solver().dt());
+        log.beta = drift;
+        bound = upperBound;
+        if(applyConstraint)
+          safetyConstraint_->set(static_cast<int>(i), solver().dt() * directional,
+                                 upperBound);
+      }
+      catch(const std::exception &) { return fail("invalid pointwise speed row at " + pair); }
     }
     else
     {
@@ -1291,8 +1357,8 @@ bool KinovaSweepController::updateSafetyConstraint(bool applyConstraint)
     }
     log.active = true;
     ++activePairs_;
-    const double margin = movingHuman_ ? log.robotBudget - robotApproach
-                                       : limit.combinedSpeed - log.closingSpeed;
+    const double margin = movingHuman_ && !temporalBarrier_ ? log.robotBudget - robotApproach
+                                                           : limit.combinedSpeed - log.closingSpeed;
     if(margin < tightest) { tightest = margin; limitingPair_ = static_cast<int>(i); }
   }
   for(size_t region = 0; region < regions.size(); ++region)
