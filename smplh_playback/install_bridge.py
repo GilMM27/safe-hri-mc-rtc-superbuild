@@ -4,6 +4,33 @@ from pathlib import Path
 import shutil
 
 
+def cache_model_override(text):
+    """Make the SMPL-H scene model follow the selected playback cache."""
+    marker = '    auto object_cfg_path = get_robot_cfg_path(module);'
+    if 'SMPLH_CACHE model' in text:
+        return text
+    if text.count(marker) != 1:
+        raise RuntimeError('Unsupported mc_mujoco object loader')
+    text = text.replace('#include <algorithm>', '#include <algorithm>\n#include <cstdlib>', 1)
+    replacement = '''    // SMPLH_CACHE model: keep scene geometry and playback from the same cache.
+    if(module == "smplh")
+    {
+      if(const char * cache = std::getenv("SMPLH_CACHE"))
+      {
+        fs::path cachePath(cache);
+        if(cachePath.filename() == "smplh_cache.bin") cachePath = cachePath.parent_path();
+        const auto xmlFile = cachePath / "human.xml";
+        if(!fs::exists(xmlFile))
+          mc_rtc::log::error_and_throw<std::runtime_error>(
+              "[mc_mujoco] SMPLH_CACHE model cannot be found at {}", xmlFile.string());
+        mjObjects[object.name] = xmlFile.string();
+        continue;
+      }
+    }
+'''+marker
+    return text.replace(marker, replacement, 1)
+
+
 def timing_readout(text):
     text=text.replace('pairs %llu/%llu",',
                       'pairs %llu/%llu\\nprep %.1f ms | collide %.1f ms | distance %.1f ms",')
@@ -27,7 +54,7 @@ def timing_readout(text):
 def install(source):
     source=Path(source); here=Path(__file__).parent
     cpp=source/'src/mj_sim.cpp'; header=source/'src/mj_sim_impl.h'
-    c=cpp.read_text(); h=header.read_text()
+    c=cache_model_override(cpp.read_text()); h=header.read_text()
     # Upgrade existing latency readouts as well as fresh bridge installations.
     c=c.replace('query %.1f ms",', 'query %.1f ms | pairs %llu/%llu",')
     c=c.replace('1000.0 * smplh_distance.worker_duration_seconds);',

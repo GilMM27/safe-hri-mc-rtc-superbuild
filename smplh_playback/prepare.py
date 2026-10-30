@@ -32,7 +32,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--amass', default=os.getenv('AMASS_SEQUENCE'), required=not os.getenv('AMASS_SEQUENCE'))
     p.add_argument('--model', default=os.getenv('SMPLH_MODEL'), required=not os.getenv('SMPLH_MODEL'))
-    p.add_argument('--output', required=True)
+    p.add_argument('--output', default=os.getenv('SMPLH_CACHE'), required=not os.getenv('SMPLH_CACHE'))
     p.add_argument('--fps', type=float, help='Playback frame rate override; changes playback speed')
     p.add_argument('--rotation', type=float, nargs=3, default=[0, 0, 0], help='World XYZ Euler degrees')
     p.add_argument('--translation', type=float, nargs=3, default=[0, 0, 0])
