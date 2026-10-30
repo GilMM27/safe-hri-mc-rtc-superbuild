@@ -10,7 +10,7 @@ GUIServer:
   Enable: true
 PositionTask:
   Weight: 5.0 # tool XYZ task; also editable at runtime in mc_rtc_gui
-  Stiffness: 2.0 # larger values move toward the target faster
+  Stiffness: 10.0 # larger values move toward the target faster
 SSMPFL:
   Weight: 1.0e6 # soft QP row penalty; speed bounds can be exceeded
   HumanMode: moving # use frozen for held playback
