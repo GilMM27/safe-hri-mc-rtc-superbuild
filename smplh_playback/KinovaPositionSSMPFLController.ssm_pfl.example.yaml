@@ -1,0 +1,48 @@
+# Simulation-only example. Replace regional force/stiffness values with
+# verified parameters before interpreting contact force or safety claims.
+MainRobot: Kinova
+Enabled: KinovaPositionSSMPFLController
+Timestep: 0.001
+LogPolicy: threaded
+Plugins: []
+ClearGlobalPluginPath: true
+GUIServer:
+  Enable: true
+PositionTask:
+  Weight: 5.0 # tool XYZ task; also editable at runtime in mc_rtc_gui
+  Stiffness: 10.0 # larger values move toward the target faster
+SSMPFL:
+  Weight: 1.0e6 # soft QP row penalty; speed bounds can be exceeded
+  HumanMode: moving # use frozen for held playback
+  StoppingTimeSeconds: 0.5
+  MaxSampleAgeSeconds: 0.1
+  MaxModelWitnessErrorM: 0.1
+  MinDirectionalInverseMass: 1.0e-12
+  MinMassEigenvalue: 1.0e-9
+  Regions:
+    head: { ForceMaxN: 65.0, StiffnessNPerM: 150000.0, DistanceMarginM: 0.05 }
+    torso: { ForceMaxN: 110.0, StiffnessNPerM: 50000.0, DistanceMarginM: 0.05 }
+    left_upper_arm:
+      { ForceMaxN: 150.0, StiffnessNPerM: 30000.0, DistanceMarginM: 0.05 }
+    left_forearm:
+      { ForceMaxN: 160.0, StiffnessNPerM: 40000.0, DistanceMarginM: 0.05 }
+    left_hand:
+      { ForceMaxN: 140.0, StiffnessNPerM: 75000.0, DistanceMarginM: 0.05 }
+    right_upper_arm:
+      { ForceMaxN: 150.0, StiffnessNPerM: 30000.0, DistanceMarginM: 0.05 }
+    right_forearm:
+      { ForceMaxN: 160.0, StiffnessNPerM: 40000.0, DistanceMarginM: 0.05 }
+    right_hand:
+      { ForceMaxN: 140.0, StiffnessNPerM: 75000.0, DistanceMarginM: 0.05 }
+    left_thigh:
+      { ForceMaxN: 220.0, StiffnessNPerM: 50000.0, DistanceMarginM: 0.05 }
+    left_lower_leg:
+      { ForceMaxN: 130.0, StiffnessNPerM: 60000.0, DistanceMarginM: 0.05 }
+    left_foot:
+      { ForceMaxN: 130.0, StiffnessNPerM: 60000.0, DistanceMarginM: 0.05 }
+    right_thigh:
+      { ForceMaxN: 220.0, StiffnessNPerM: 50000.0, DistanceMarginM: 0.05 }
+    right_lower_leg:
+      { ForceMaxN: 130.0, StiffnessNPerM: 60000.0, DistanceMarginM: 0.05 }
+    right_foot:
+      { ForceMaxN: 130.0, StiffnessNPerM: 60000.0, DistanceMarginM: 0.05 }
