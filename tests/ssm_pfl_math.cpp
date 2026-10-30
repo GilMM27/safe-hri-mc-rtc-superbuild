@@ -1,4 +1,4 @@
-#include "../kinova_hold_controller/src/SSMPFLMath.h"
+#include "../kinova_controllers/src/SSMPFLMath.h"
 
 #include <Eigen/Core>
 #include <cassert>

@@ -196,7 +196,7 @@ robot model's joint limits. Adjust `Sweep.SegmentSeconds`, `Sweep.DwellSeconds`,
 `Sweep.MaxJointSpeedRadS`, `Sweep.PostureStiffness`, and `Sweep.PostureWeight` in
 `~/.config/mc_rtc/controllers/KinovaSweepController.yaml`
 if needed. The installed defaults are in
-`kinova_hold_controller/etc/KinovaSweepController.in.yaml`. The
+`kinova_controllers/etc/KinovaSweepController.in.yaml`. The
 controller extends segment time when necessary to respect the configured
 joint reference speed and the robot model's velocity limit. `SegmentSeconds`
 uses simulation time, so a slow MuJoCo run takes longer on the wall clock.

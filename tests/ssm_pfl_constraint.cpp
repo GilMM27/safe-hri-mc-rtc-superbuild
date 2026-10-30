@@ -1,4 +1,4 @@
-#include "../kinova_hold_controller/src/SSMPFLConstraint.h"
+#include "../kinova_controllers/src/SSMPFLConstraint.h"
 #include <eigen-qld/QLD.h>
 
 #include <cassert>
