@@ -9,8 +9,8 @@ foreach(extension_dir ${extension_dirs})
 endforeach()
 
 add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../kinova_hold_controller
-  ${CMAKE_CURRENT_BINARY_DIR}/kinova_hold_controller
+  ${CMAKE_CURRENT_SOURCE_DIR}/../kinova_controllers
+  ${CMAKE_CURRENT_BINARY_DIR}/kinova_controllers
 )
 
 if(WITH_SMPLH_PLAYBACK)

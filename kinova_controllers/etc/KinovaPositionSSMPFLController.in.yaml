@@ -3,4 +3,4 @@
 Managed: true
 PositionTask:
   Weight: 5.0
-  Stiffness: 2.0
+  Stiffness: 10.0

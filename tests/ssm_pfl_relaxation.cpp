@@ -1,4 +1,4 @@
-#include "../kinova_hold_controller/src/SSMPFLRelaxation.h"
+#include "../kinova_controllers/src/SSMPFLRelaxation.h"
 
 #include <cassert>
 #include <cmath>

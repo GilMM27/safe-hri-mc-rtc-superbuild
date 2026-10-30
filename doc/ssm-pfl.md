@@ -394,7 +394,7 @@ external `mc_mujoco` source:
 python3 smplh_playback/install_bridge.py --source ~/workspace/src/mc_mujoco
 cmake --build ~/workspace/build/mc_mujoco -j2
 cmake --install ~/workspace/build/mc_mujoco --prefix ~/workspace/install
-cmake -S kinova_hold_controller -B /tmp/kinova-ssm-build \
+cmake -S kinova_controllers -B /tmp/kinova-ssm-build \
   -DCMAKE_PREFIX_PATH=~/workspace/install
 cmake --build /tmp/kinova-ssm-build -j2
 cmake --install /tmp/kinova-ssm-build --prefix ~/workspace/install
