@@ -203,7 +203,7 @@ stop**.
 
 The installed [sweep defaults](../kinova_controllers/etc/KinovaSweepController.in.yaml)
 set the motion only. The
-[SSM+PFL example](../smplh_playback/KinovaSweepController.ssm_pfl.example.yaml)
+[SSM+PFL example](../kinova_controllers/examples/ssm_pfl_all_options.yaml)
 shows opt-in safety parameters. The key choices are `SSMPFL.Enabled`,
 `HumanMode`, `ConstraintMode`, per-region `ForceMaxN` / `StiffnessNPerM` /
 `DistanceMarginM`, `StoppingTimeSeconds`, and optional `Relaxation` settings.

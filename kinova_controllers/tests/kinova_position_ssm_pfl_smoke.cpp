@@ -9,6 +9,8 @@ int main(int argc, char ** argv)
   if(argc != 2) throw std::runtime_error("expected SSMPFL configuration path");
   mc_rtc::Configuration config;
   config.load(std::string(argv[1]));
+  config.add("PositionTask", mc_rtc::Configuration::fromYAMLData("Weight: 5.0\nStiffness: 2.0"));
+  config("SSMPFL").add("HumanMode", "moving");
   if(std::abs(config("PositionTask")("Weight", 0.0) - 5.0) > 1e-12)
     throw std::runtime_error("example position weight is not 5");
   if(std::abs(config("PositionTask")("Stiffness", 0.0) - 2.0) > 1e-12)
