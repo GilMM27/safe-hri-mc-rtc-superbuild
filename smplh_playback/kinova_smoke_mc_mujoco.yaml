@@ -1,6 +1,0 @@
-objects:
-  human:
-    module: smplh
-    init_pos:
-      translation: [0.0, 0.0, 0.0]
-      rotation: [0.0, 0.0, 0.0]

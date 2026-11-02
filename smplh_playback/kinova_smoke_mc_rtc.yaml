@@ -1,7 +1,0 @@
-MainRobot: Kinova
-Enabled: KinovaHoldController
-Timestep: 0.001
-LogPolicy: threaded
-Plugins: []
-GUIServer:
-  Enable: false

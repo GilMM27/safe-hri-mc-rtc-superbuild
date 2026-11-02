@@ -401,7 +401,7 @@ cmake --install /tmp/kinova-ssm-build --prefix ~/workspace/install
 ```
 
 Merge the `SSMPFL` block from
-[the example configuration](../smplh_playback/KinovaSweepController.ssm_pfl.example.yaml)
+[the example configuration](../kinova_controllers/examples/ssm_pfl_all_options.yaml)
 into `~/.config/mc_rtc/controllers/KinovaSweepController.yaml`, preserving
 any existing Sweep settings. Create that file from the example if it does not
 exist. Set

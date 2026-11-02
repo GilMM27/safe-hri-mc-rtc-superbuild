@@ -34,10 +34,10 @@ bridge, worker, and logging path:
 python -m smplh_playback.make_smoke_fixture --output /tmp/smplh-smoke-cache
 ```
 
-It is not a human surface and must not be used for distance research. The
-`smplh_playback/kinova_smoke_mc_mujoco.yaml` and
-`smplh_playback/kinova_smoke_mc_rtc.yaml` files provide isolated Kinova
-settings for a smoke run.
+It is not a human surface and must not be used for distance research. Configure
+the Kinova controller and MuJoCo human object as in the
+[controller guide](../kinova_controllers/README.md) and
+[playback guide](../smplh_playback/README.md) for a smoke run.
 
 ## Regions and measurements
 

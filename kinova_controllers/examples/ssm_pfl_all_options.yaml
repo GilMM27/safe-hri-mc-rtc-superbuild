@@ -1,13 +1,7 @@
-# Simulation-only placeholder values. Replace every regional force/stiffness
-# value with separately verified parameters before interpreting the result.
-Sweep:
-  AmplitudeRad: 0.2
-  SegmentSeconds: 1.0
-  DwellSeconds: 0.25
-  MaxJointSpeedRadS: 0.6
-  PostureStiffness: 25.0
-  PostureWeight: 10.0
-  AutoStart: false # true for scripted headless validation
+# Complete SSMPFL option example for KinovaSweepController.
+# Regional values are one example. Set them for the experiment before use.
+# These are unverified simulation values, not calibrated safety limits.
+# KinovaPositionSSMPFLController supports only a subset of these options.
 SSMPFL:
   Enabled: true
   Weight: 1.0e6 # soft row cost per squared m/s violation; tune against PostureWeight
@@ -26,7 +20,8 @@ SSMPFL:
     AccelerationRegularization: 1.0e-10 # QLD positive-definite tie breaker
     MaxAccelerationRadS2: 10.0 # explicit research bound; replace with measured capability
     MaxStage2SlackMps: 0.2 # moving pointwise mode: cap shared speed slack in regularized retry
-    # Regions: {left_hand: {Weight: 1.0, Scale: 1.0}}
+    Regions:
+      left_hand: {Weight: 1.0, Scale: 1.0} # optional per-region relaxation override
   MaxDerivativeGapSeconds: 0.5 # derivative history gap, separate from sample freshness
   MaxWitnessStepM: 0.03 # reject temporal derivative across large witness migration
   MaxNormalStepRad: 0.3
@@ -37,17 +32,17 @@ SSMPFL:
   MinDirectionalInverseMass: 1.0e-12
   MinMassEigenvalue: 1.0e-9
   Regions:
-    head:             {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    torso:            {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    left_upper_arm:   {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    left_forearm:     {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    left_hand:        {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    right_upper_arm:  {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    right_forearm:    {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    right_hand:       {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    left_thigh:       {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    left_lower_leg:   {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    left_foot:        {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    right_thigh:      {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    right_lower_leg: {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
-    right_foot:       {ForceMaxN: 50.0, StiffnessNPerM: 10000.0, DistanceMarginM: 0.05}
+    head:             {ForceMaxN: 65.0, StiffnessNPerM: 150000.0, DistanceMarginM: 0.05}
+    torso:            {ForceMaxN: 110.0, StiffnessNPerM: 50000.0, DistanceMarginM: 0.05}
+    left_upper_arm:   {ForceMaxN: 150.0, StiffnessNPerM: 30000.0, DistanceMarginM: 0.05}
+    left_forearm:     {ForceMaxN: 160.0, StiffnessNPerM: 40000.0, DistanceMarginM: 0.05}
+    left_hand:        {ForceMaxN: 140.0, StiffnessNPerM: 75000.0, DistanceMarginM: 0.05}
+    right_upper_arm:  {ForceMaxN: 150.0, StiffnessNPerM: 30000.0, DistanceMarginM: 0.05}
+    right_forearm:    {ForceMaxN: 160.0, StiffnessNPerM: 40000.0, DistanceMarginM: 0.05}
+    right_hand:       {ForceMaxN: 140.0, StiffnessNPerM: 75000.0, DistanceMarginM: 0.05}
+    left_thigh:       {ForceMaxN: 220.0, StiffnessNPerM: 50000.0, DistanceMarginM: 0.05}
+    left_lower_leg:   {ForceMaxN: 130.0, StiffnessNPerM: 60000.0, DistanceMarginM: 0.05}
+    left_foot:        {ForceMaxN: 130.0, StiffnessNPerM: 60000.0, DistanceMarginM: 0.05}
+    right_thigh:      {ForceMaxN: 220.0, StiffnessNPerM: 50000.0, DistanceMarginM: 0.05}
+    right_lower_leg: {ForceMaxN: 130.0, StiffnessNPerM: 60000.0, DistanceMarginM: 0.05}
+    right_foot:       {ForceMaxN: 130.0, StiffnessNPerM: 60000.0, DistanceMarginM: 0.05}
