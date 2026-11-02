@@ -131,14 +131,13 @@ and Kinova support during configuration:
 ```bash
 cmake --preset relwithdebinfo \
   -DWITH_ROS_SUPPORT=ON \
-  -DROS_IS_ROS2=ON \
   -DWITH_Kinova=ON
 cmake --build --preset relwithdebinfo
 ```
 
-The build installs the Kinova Gen3 model as `kinova` for `mc_mujoco`. Select a controller that is
-compatible with a 7-DoF arm and use a 1 ms controller timestep to match the
-Kinova MuJoCo model's physics step:
+The build installs the Kinova Gen3 model as `kinova` for `mc_mujoco`. Modify
+`~/.config/mc_rtc/mc_rtc.yaml` and select a controller that is compatible with a 7-DoF arm
+and use a 1 ms controller timestep to match the Kinova MuJoCo model's physics step:
 
 ```yaml
 MainRobot: Kinova
@@ -152,7 +151,6 @@ containing the controller's assets:
 
 ```bash
 source ~/workspace/install/setup_mc_rtc.sh
-cd ~/workspace/src/<your-controller-directory>
 mc_mujoco --sync
 ```
 
@@ -161,53 +159,6 @@ The Kinova module and MuJoCo model are separate pieces: `WITH_Kinova` builds the
 the Menagerie MJCF and its meshes. This provides simulation; `mc_kortex` remains the
 separate interface for a physical Kinova Gen3.
 
-For a stationary first test, this repository also installs the
-`KinovaHoldController` plugin. It holds the Kinova Gen3 at its default posture and
-does not command a trajectory:
-
-```yaml
-MainRobot: Kinova
-Enabled: KinovaHoldController
-Timestep: 0.001
-LogPolicy: threaded
-```
-
-The controller is intentionally limited to the seven base Kinova joints. It is a
-smoke-test controller, not a manipulation controller.
-
-For repeatable motion in MuJoCo, select `KinovaSweepController` instead. It
-holds the starting posture until **Start** is pressed under **Kinova sweep** in
-`mc_rtc_gui`, then rotates `joint_1` between its home angle and `+0.2 rad` using
-one-second smooth segments with quarter-second dwells. **Stop** holds the measured
-posture; pressing **Start** again resumes a new cycle from that posture. Enable
-`GUIServer` in `mc_rtc.yaml` so the buttons are available:
-
-```yaml
-MainRobot: Kinova
-Enabled: KinovaSweepController
-Timestep: 0.001
-GUIServer:
-  Enable: true
-```
-
-Set `Sweep.AmplitudeRad` to a negative value (for example, `-0.2`) to sweep
-`joint_1` toward the other side of home. The waypoint must remain within the
-robot model's joint limits. Adjust `Sweep.SegmentSeconds`, `Sweep.DwellSeconds`, and
-`Sweep.MaxJointSpeedRadS`, `Sweep.PostureStiffness`, and `Sweep.PostureWeight` in
-`~/.config/mc_rtc/controllers/KinovaSweepController.yaml`
-if needed. The installed defaults are in
-`kinova_controllers/etc/KinovaSweepController.in.yaml`. The
-controller extends segment time when necessary to respect the configured
-joint reference speed and the robot model's velocity limit. `SegmentSeconds`
-uses simulation time, so a slow MuJoCo run takes longer on the wall clock.
-`PostureStiffness` controls how closely the simulated arm follows the
-reference; `PostureWeight` sets the sweep posture task's QP weight. Their
-defaults are 25 and 10, respectively. The stationary hold controller
-still uses 1. Check the arm's clearance from the table and human for
-your scene before using a changed sweep. It logs the cycle phase (0 hold,
-1 outbound, 2 outbound dwell, 3 return, 4 home dwell), commanded and measured
-joint positions, and the available SMPL-H regional distances. This motion is a
-simulation baseline; it does not implement SSM or PFL.
 
 ## SMPL-H / AMASS human playback
 
