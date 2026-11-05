@@ -7,6 +7,7 @@ This directory builds three `mc_rtc` controllers for the Kinova Gen3:
 | `KinovaHoldController` | Holds the seven arm joints at a fixed posture. Useful for a stationary simulation check. |
 | `KinovaSweepController` | Sweeps `joint_1` between home and a configured waypoint. It can add SSM+PFL constraints to its QP. |
 | `KinovaPositionSSMPFLController` | Moves the tool toward a position target set in `mc_rtc_gui`, with hard SSM+PFL speed rows by default or soft rows when `SSMPFL.Weight` is set. |
+| `KinovaPositionSSMPFLPositionTaskController` | Uses the same tool target and SSM+PFL speed budgets, with one weighted position task per monitored robot link. |
 
 Build these controllers through the [superbuild](../README.md). For SSM+PFL,
 enable `WITH_SMPLH_PLAYBACK=ON`, prepare a cache, and add the human object to
@@ -64,3 +65,15 @@ below the position task's weight. In `mc_rtc_gui`,
 move **Tasks → KinovaToolPosition → pos_target** to set a world-frame XYZ
 target. This controller requires fresh distance samples to move; it holds the
 tool when samples are missing or stale.
+
+To use the task-based variant, set `Enabled: KinovaPositionSSMPFLPositionTaskController`
+and copy the same `SSMPFL.Regions` configuration into its controller YAML.
+`SSMPFL.Weight` (default `5.0`) sets the weight of each of the seven link
+position tasks, while `SSMPFL.Stiffness` (default `2.0`) sets their stiffness.
+The controller projects each region's speed budget into a desired link
+acceleration. These weighted tasks approximate the speed rows; they do not
+provide a hard speed limit, especially when task objectives conflict.
+Link tasks enter the solver only when the current speed budget calls for
+deceleration, so they do not oppose normal tool movement. Set
+`SSMPFL.HumanMode: moving` for moving playback; the controller holds the tool
+target if playback moves while this setting is `frozen`.
