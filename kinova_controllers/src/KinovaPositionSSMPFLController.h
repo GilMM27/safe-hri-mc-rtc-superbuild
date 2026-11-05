@@ -6,6 +6,7 @@
 #include <mc_control/fsm/Controller.h>
 #include <mc_mujoco/SmplhDistanceSnapshot.h>
 #include <mc_tasks/PositionTask.h>
+#include <mc_tasks/PostureTask.h>
 #include <RBDyn/FD.h>
 
 #include <array>
@@ -37,6 +38,7 @@ private:
   void addSpeedPlot();
 
   std::shared_ptr<mc_tasks::PositionTask> positionTask_;
+  std::shared_ptr<mc_tasks::PostureTask> postureTask_;
   std::unique_ptr<SSMPFLConstraint> safetyConstraint_;
   std::unique_ptr<rbd::ForwardDynamics> inertia_;
   std::map<std::string, RegionParameters> regionParameters_;

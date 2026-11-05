@@ -1,6 +1,10 @@
-# Set SSMPFL.Weight and all regional force/stiffness parameters in the
-# controller configuration before selecting this controller.
+# Set all regional force/stiffness parameters in the controller configuration.
+# SSMPFL.Weight is optional: omit it for hard speed rows, or set a positive
+# value to penalize speed-limit slack.
 Managed: true
 PositionTask:
   Weight: 5.0
   Stiffness: 10.0
+PostureTask:
+  Weight: 0.1
+  Stiffness: 1.0

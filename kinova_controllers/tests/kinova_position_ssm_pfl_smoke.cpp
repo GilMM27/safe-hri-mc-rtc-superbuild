@@ -24,14 +24,24 @@ int main(int argc, char ** argv)
   if(!controller.robots().hasRobot("ground"))
     throw std::runtime_error("position controller did not load ground");
   const auto & tasks = controller.solver().tasks();
-  auto * task = tasks.size() == 1 ? dynamic_cast<mc_tasks::PositionTask *>(tasks.front()) : nullptr;
+  auto * task = tasks.size() == 2 ? dynamic_cast<mc_tasks::PositionTask *>(tasks.front()) : nullptr;
+  auto * posture = tasks.size() == 2 ? dynamic_cast<mc_tasks::PostureTask *>(tasks.back()) : nullptr;
   if(!task || task->name() != "KinovaToolPosition")
-    throw std::runtime_error("unexpected position or posture task setup");
+    throw std::runtime_error("unexpected position task setup");
+  if(!posture || posture->name() != "KinovaPreferredPosture")
+    throw std::runtime_error("preferred posture task is missing");
   if(std::abs(task->weight() - 5.0) > 1e-12)
     throw std::runtime_error("position task default weight is not 5");
   if(std::abs(task->stiffness() - 2.0) > 1e-12)
     throw std::runtime_error("position task default stiffness is not 2");
+  if(std::abs(posture->weight() - 0.1) > 1e-12 || std::abs(posture->stiffness() - 1.0) > 1e-12)
+    throw std::runtime_error("preferred posture task default gains are incorrect");
+  auto displacedPosture = controller.robot().q();
+  displacedPosture.at(controller.robot().jointIndexByName("joint_1")).at(0) += 0.1;
+  posture->posture(displacedPosture);
   controller.reset({controller.robot().q()});
+  if(posture->posture() != controller.robot().q())
+    throw std::runtime_error("preferred posture was not anchored at reset");
   const Eigen::Vector3d initial = controller.robot().frame("tool_frame").position().translation();
   if((task->position() - initial).norm() > 1e-10)
     throw std::runtime_error("position target was not initialized to tool position");
@@ -86,6 +96,7 @@ int main(int argc, char ** argv)
     throw std::runtime_error("invalid moving-human velocity did not cancel target motion");
 
   config("SSMPFL").add("HumanMode", "frozen");
+  config("SSMPFL").remove("Weight"); // Exercise hard speed rows without slack.
   config("PositionTask").add("Weight", 7.5);
   config("PositionTask").add("Stiffness", 5.0);
   KinovaPositionSSMPFLController frozenController(module, 0.001, config);

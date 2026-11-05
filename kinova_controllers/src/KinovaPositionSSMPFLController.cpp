@@ -39,19 +39,20 @@ KinovaPositionSSMPFLController::KinovaPositionSSMPFLController(
     mc_rbdyn::RobotModulePtr rm, double dt, const mc_rtc::Configuration & config)
 : mc_control::fsm::Controller(rm, dt, managedConfig(config), Backend::TVM)
 {
-  // Match the sweep controller's TVM dynamics and collision setup. The FSM
-  // idle posture would compete with manual XYZ motion, so remove its task.
+  // Match the sweep controller's TVM dynamics and collision setup. Replace
+  // the FSM idle posture with a weak, independently weighted posture task.
   loadRobot(mc_rbdyn::RobotLoader::get_robot_module("env/ground"), "ground");
   solver().removeConstraintSet(dynamicsConstraint);
   dynamicsConstraint = mc_rtc::unique_ptr<mc_solver::DynamicsConstraint>(
       new mc_solver::DynamicsConstraint(robots(), 0, {0.1, 0.01, 0.0, 1.2, 100.0}, 0.95, true));
   solver().addConstraintSet(dynamicsConstraint);
-  solver().addConstraintSet(selfCollisionConstraint);
+  selfCollisionConstraint->setCollisionsDampers(solver(), {1.2, 70.0});
   auto idlePosture = getPostureTask(robot().name());
   if(!idlePosture) mc_rtc::log::error_and_throw("Kinova position controller requires an actuated robot");
   solver().removeTask(idlePosture);
   solver().setContacts({});
 
+  // Position task which drives the robot's end effector to meet with the GUI target.
   double positionWeight = 5.0;
   double positionStiffness = 2.0;
   if(config.has("PositionTask"))
@@ -71,11 +72,33 @@ KinovaPositionSSMPFLController::KinovaPositionSSMPFLController(
   positionTask_->name("KinovaToolPosition");
   solver().addTask(positionTask_);
 
+  // Posture task which avoids the robot from continiuosly spinning when the goal has been reached.
+  double postureWeight = 0.1;
+  double postureStiffness = 1.0;
+  if(config.has("PostureTask"))
+  {
+    const auto taskConfig = config("PostureTask");
+    taskConfig("Weight", postureWeight);
+    taskConfig("Stiffness", postureStiffness);
+  }
+  if(!std::isfinite(postureWeight) || postureWeight <= 0)
+    mc_rtc::log::error_and_throw("PostureTask.Weight must be a positive finite value");
+  if(!std::isfinite(postureStiffness) || postureStiffness <= 0)
+    mc_rtc::log::error_and_throw("PostureTask.Stiffness must be a positive finite value");
+  postureTask_ = std::make_shared<mc_tasks::PostureTask>(solver(), robot().robotIndex(),
+                                                         postureStiffness, postureWeight);
+  postureTask_->name("KinovaPreferredPosture");
+  solver().addTask(postureTask_);
+
   if(!config.has("SSMPFL")) mc_rtc::log::error_and_throw("Missing SSMPFL configuration");
   const auto safety = config("SSMPFL");
-  if(!safety.has("Weight") || !safety.has("Regions"))
-    mc_rtc::log::error_and_throw("SSMPFL.Weight and SSMPFL.Regions are required");
-  safety("Weight", safetyWeight_);
+  if(!safety.has("Regions")) mc_rtc::log::error_and_throw("SSMPFL.Regions is required");
+  if(safety.has("Weight"))
+  {
+    safety("Weight", safetyWeight_);
+    if(!std::isfinite(safetyWeight_) || safetyWeight_ <= 0)
+      mc_rtc::log::error_and_throw("SSMPFL.Weight must be a positive finite value");
+  }
   std::string mode = "frozen";
   safety("HumanMode", mode);
   if(mode != "frozen" && mode != "moving")
@@ -86,12 +109,12 @@ KinovaPositionSSMPFLController::KinovaPositionSSMPFLController(
   safety("MaxModelWitnessErrorM", maxModelWitnessError_);
   safety("MinDirectionalInverseMass", minMobility_);
   safety("MinMassEigenvalue", minMassEigenvalue_);
-  if(!std::isfinite(safetyWeight_) || safetyWeight_ <= 0 || !std::isfinite(stopTime_) || stopTime_ <= 0
+  if(!std::isfinite(stopTime_) || stopTime_ <= 0
      || !std::isfinite(maxSampleAge_) || maxSampleAge_ <= 0
      || !std::isfinite(maxModelWitnessError_) || maxModelWitnessError_ <= 0
      || !std::isfinite(minMobility_) || minMobility_ < 0
      || !std::isfinite(minMassEigenvalue_) || minMassEigenvalue_ <= 0)
-    mc_rtc::log::error_and_throw("Invalid SSMPFL weight or tolerance");
+    mc_rtc::log::error_and_throw("Invalid SSMPFL tolerance");
   const auto configuredRegions = safety("Regions");
   for(const auto * name : regions)
   {
@@ -110,8 +133,8 @@ KinovaPositionSSMPFLController::KinovaPositionSSMPFLController(
     regionParameters_[name] = parameters;
   }
 
-  // Allocate one TVM row per region/link pair. Weight makes each row soft:
-  // excess approach speed is penalized in the QP rather than forbidden.
+  // Allocate one TVM row per region/link pair. An optional positive Weight
+  // adds penalized slack; without it, the speed rows are hard constraints.
   safetyConstraint_.reset(new SSMPFLConstraint(robot().tvmRobot().alphaD(), robot().mb().nrDof(),
                                                 static_cast<int>(regions.size() * links.size()),
                                                 true, safetyWeight_));
@@ -197,6 +220,7 @@ void KinovaPositionSSMPFLController::reset(const mc_control::ControllerResetData
   mc_control::fsm::Controller::reset(data);
   // Start without a commanded jump, even after a MuJoCo reset.
   positionTask_->reset();
+  postureTask_->posture(robot().q());
   safetyConstraint_->clear();
   time_ = 0;
   sampleAge_ = 0;
@@ -336,7 +360,7 @@ bool KinovaPositionSSMPFLController::updateSafetyRows()
     const double drift = (n.transpose() * fullDot.bottomRows(3) * qdot).value();
     try
     {
-      // v_next = J*qdot + dt*(J*qddot + Jdot*qdot). The soft row bounds
+      // v_next = J*qdot + dt*(J*qddot + Jdot*qdot). This row bounds
       // its approach component by the SSM+PFL robot-speed budget.
       const double budget = ssm_pfl::robotSpeedBudget(limit.combinedSpeed, humanApproach);
       const double bound = ssm_pfl::pointSpeedUpperBound(budget, robotApproach, drift, solver().dt());
