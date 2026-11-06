@@ -57,6 +57,9 @@ def install(source):
     source=Path(source); here=Path(__file__).parent
     cpp=source/'src/mj_sim.cpp'; header=source/'src/mj_sim_impl.h'
     c=cache_model_override(cpp.read_text()); h=header.read_text()
+    c=c.replace('ImGui::Text("Simulation/Real time: %.2f", mj_sim_dt_average / (1e6 * model->opt.timestep));',
+                'ImGui::Text("Simulation/Real time: %.2f", mj_sim_dt_average > 0 ? '
+                '(1e6 * model->opt.timestep) / mj_sim_dt_average : 0.0);')
     if BRIDGE_MARKER in c:
         shutil.copyfile(here/'SmplhDistanceWorker.h', source/'src/SmplhDistanceWorker.h')
         shutil.copyfile(here/'NativeSmplhPlayback.h', source/'src/SmplhBridge.h')
