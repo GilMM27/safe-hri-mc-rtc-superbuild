@@ -1,12 +1,14 @@
 # Kinova controllers
 
-This directory builds three `mc_rtc` controllers for the Kinova Gen3:
+This directory builds three `mc_rtc` controllers for the Kinova Gen3. The
+`KinovaPositionSSMPFLController` lives in its
+[own repository](https://github.com/GilMM27/kinova_position_SSM_PFL_controller)
+and is registered by `extensions/kinova_position_SSM_PFL_controller.cmake`.
 
 | Controller | Behavior |
 | --- | --- |
 | `KinovaHoldController` | Holds the seven arm joints at a fixed posture. Useful for a stationary simulation check. |
 | `KinovaSweepController` | Sweeps `joint_1` between home and a configured waypoint. It can add SSM+PFL constraints to its QP. |
-| `KinovaPositionSSMPFLController` | Moves the tool toward a position target set in `mc_rtc_gui`, with hard SSM+PFL speed rows by default or soft rows when `SSMPFL.Weight` is set. |
 | `KinovaPositionSSMPFLPositionTaskController` | Uses the same tool target and SSM+PFL speed budgets, with one weighted position task per monitored robot link. |
 
 Build these controllers through the [superbuild](../README.md). For SSM+PFL,
@@ -48,25 +50,9 @@ After exporting `SMPLH_CACHE`, run `mc_mujoco --sync` and press
 [SSM+PFL guide](../doc/ssm-pfl.md) for the constraint modes, diagnostics, and
 limitations.
 
-## Run the position controller
+## Run the task-based position controller
 
-Set `Enabled: KinovaPositionSSMPFLController` in `mc_rtc.yaml`. Its controller
-configuration needs all 14 `SSMPFL.Regions` entries. Omit `SSMPFL.Weight` for
-hard speed rows or set a positive weight for soft rows. The complete option
-example above supplies those values, but this controller
-uses only its shared subset of keys. Copy the file to
-`~/.config/mc_rtc/controllers/KinovaPositionSSMPFLController.yaml` and set
-`SSMPFL.HumanMode` to match playback. `PositionTask.Weight` and
-`PositionTask.Stiffness` set the tool task's startup gains. The controller also
-anchors a weak posture task to the measured joints on reset to prevent arm
-swivel at a fixed tool position. `PostureTask.Weight` (default `0.1`) and
-`PostureTask.Stiffness` (default `1.0`) tune that preference; keep its weight
-below the position task's weight. In `mc_rtc_gui`,
-move **Tasks → KinovaToolPosition → pos_target** to set a world-frame XYZ
-target. This controller requires fresh distance samples to move; it holds the
-tool when samples are missing or stale.
-
-To use the task-based variant, set `Enabled: KinovaPositionSSMPFLPositionTaskController`
+Set `Enabled: KinovaPositionSSMPFLPositionTaskController`
 and copy the same `SSMPFL.Regions` configuration into its controller YAML.
 `SSMPFL.Weight` (default `5.0`) sets the weight of each of the seven link
 position tasks, while `SSMPFL.Stiffness` (default `2.0`) sets their stiffness.
