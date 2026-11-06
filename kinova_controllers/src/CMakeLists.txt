@@ -10,13 +10,10 @@ set_target_properties(
 add_controller(KinovaSweepController KinovaSweepController.cpp KinovaSweepController.h)
 target_link_libraries(KinovaSweepController PRIVATE mc_rtc::mc_control_fsm)
 
-add_controller(KinovaPositionSSMPFLController KinovaPositionSSMPFLController.cpp KinovaPositionSSMPFLController.h)
-target_link_libraries(KinovaPositionSSMPFLController PRIVATE mc_rtc::mc_control_fsm)
-
 add_controller(KinovaPositionSSMPFLPositionTaskController KinovaPositionSSMPFLPositionTaskController.cpp KinovaPositionSSMPFLPositionTaskController.h)
 target_link_libraries(KinovaPositionSSMPFLPositionTaskController PRIVATE mc_rtc::mc_control_fsm)
 
-foreach(controller KinovaHoldController KinovaSweepController KinovaPositionSSMPFLController KinovaPositionSSMPFLPositionTaskController)
+foreach(controller KinovaHoldController KinovaSweepController KinovaPositionSSMPFLPositionTaskController)
   if(TARGET human_robot_distance_api::human_robot_distance_api)
     target_link_libraries(${controller} PUBLIC human_robot_distance_api::human_robot_distance_api)
   else()
