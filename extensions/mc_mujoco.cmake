@@ -23,7 +23,10 @@ AptInstall(libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libglew-dev)
 
 option(WITH_SMPLH_PLAYBACK "Enable native SMPL-H cache playback in mc_mujoco (Linux)" OFF)
 set(SMPLH_PATCH_ARGS)
+set(SMPLH_DEPENDS)
 if(WITH_SMPLH_PLAYBACK)
+  include(${CMAKE_CURRENT_LIST_DIR}/human_robot_distance_api.cmake)
+  list(APPEND SMPLH_DEPENDS human_robot_distance_api)
   if(NOT UNIX OR APPLE)
     message(FATAL_ERROR "The native SMPL-H bridge currently requires Linux")
   endif()
@@ -38,7 +41,7 @@ AddProject(mc_mujoco
   GITHUB bastien-muraccioli/mc_mujoco
   GIT_TAG origin/main
   CMAKE_ARGS -DMUJOCO_ROOT_DIR=${MUJOCO_ROOT_DIR}
-  DEPENDS mc_rtc
+  DEPENDS mc_rtc ${SMPLH_DEPENDS}
   ${SMPLH_PATCH_ARGS}
 )
 
@@ -54,6 +57,5 @@ if(WITH_SMPLH_PLAYBACK)
       "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/install_bridge.py"
       "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/NativeSmplhPlayback.h"
       "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/SmplhDistanceWorker.h"
-      "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/SmplhDistanceSnapshot.h"
   )
 endif()

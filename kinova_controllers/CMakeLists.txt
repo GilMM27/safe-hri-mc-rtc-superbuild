@@ -13,6 +13,11 @@ if(NOT TARGET mc_rtc::mc_control)
   find_package(mc_rtc REQUIRED)
 endif()
 
+find_package(human_robot_distance_api 2 CONFIG QUIET)
+if(NOT TARGET human_robot_distance_api::human_robot_distance_api AND NOT TARGET human_robot_distance_api)
+  message(FATAL_ERROR "human_robot_distance_api is required to build the Kinova controllers")
+endif()
+
 add_subdirectory(src)
 
 include(CTest)

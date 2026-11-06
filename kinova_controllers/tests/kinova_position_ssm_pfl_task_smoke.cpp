@@ -42,7 +42,7 @@ int main(int argc, char ** argv)
   if(controller.solver().tasks().size() != 2)
     throw std::runtime_error("fallback left safety tasks opposing tool motion");
 
-  mc_mujoco::SmplhDistanceSnapshot snapshot;
+  human_robot_distance::Snapshot snapshot;
   snapshot.ready = true;
   snapshot.sample_simulation_time = 0.002;
   const std::array<const char *, 14> regions = {{"head", "torso", "left_upper_arm", "left_forearm",
@@ -53,7 +53,7 @@ int main(int argc, char ** argv)
   for(const auto * region : regions)
     for(int joint = 1; joint <= 7; ++joint)
     {
-      mc_mujoco::SmplhRegionDistance sample;
+      human_robot_distance::RegionDistance sample;
       sample.region = region;
       sample.link = "joint_" + std::to_string(joint);
       sample.distance = 0.01;
@@ -66,7 +66,7 @@ int main(int argc, char ** argv)
       sample.human_velocity_valid = true;
       snapshot.regions.push_back(sample);
     }
-  controller.datastore().make<mc_mujoco::SmplhDistanceSnapshot>("SMPLH::DistanceSnapshot", snapshot);
+  controller.datastore().make<human_robot_distance::Snapshot>(human_robot_distance::datastoreKey, snapshot);
   const Eigen::Vector3d target = tool->position() + Eigen::Vector3d(0.01, 0, 0);
   tool->position(target);
   if(!controller.run()) throw std::runtime_error("controller failed with a valid snapshot");

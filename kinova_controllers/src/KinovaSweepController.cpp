@@ -1054,11 +1054,11 @@ bool KinovaSweepController::run()
   return solverSuccess_;
 }
 
-const mc_mujoco::SmplhDistanceSnapshot * KinovaSweepController::distanceSnapshot() const
+const human_robot_distance::Snapshot * KinovaSweepController::distanceSnapshot() const
 {
-  static const std::string key = "SMPLH::DistanceSnapshot";
+  static const std::string key = human_robot_distance::datastoreKey;
   if(!datastore().has(key)) return nullptr;
-  const auto & snapshot = datastore().get<mc_mujoco::SmplhDistanceSnapshot>(key);
+  const auto & snapshot = datastore().get<human_robot_distance::Snapshot>(key);
   return snapshot.ready && snapshot.error.empty() ? &snapshot : nullptr;
 }
 
@@ -1156,7 +1156,7 @@ bool KinovaSweepController::updateSafetyConstraint(bool applyConstraint)
   if(!std::isfinite(age) || age < -solver().dt() || age > maxSampleAge_)
     return fail("distance sample is stale or timestamp invalid");
   if(snapshot->regions.size() != linkPairLogs_.size()) return fail("missing monitored region/link pairs");
-  std::map<std::pair<std::string, std::string>, const mc_mujoco::SmplhRegionDistance *> samples;
+  std::map<std::pair<std::string, std::string>, const human_robot_distance::RegionDistance *> samples;
   for(const auto & sample : snapshot->regions)
     if(!samples.emplace(std::make_pair(sample.region, sample.link), &sample).second)
       return fail("duplicate monitored region/link pair");

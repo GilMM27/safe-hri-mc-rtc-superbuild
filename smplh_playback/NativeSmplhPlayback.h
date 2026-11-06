@@ -204,7 +204,7 @@ public:
                              1.0 / fps_, held, d, m, surfaceGeom_);
     }
   }
-  mc_mujoco::SmplhDistanceSnapshot snapshot() const { return distanceWorker_.latest(); }
+  human_robot_distance::Snapshot snapshot() const { return distanceWorker_.latest(); }
   void renderDistanceOverlay(mjvScene * scene) const
   {
     if(!distanceEnabled_ || !scene) return;
@@ -218,7 +218,7 @@ public:
     const float arrowColor[4] = {0.25f, 1.0f, 0.35f, 1.0f};
     // Keep one visible arrow per human region; the worker still publishes and
     // constrains all region/link pairs.
-    std::map<std::string, const mc_mujoco::SmplhRegionDistance *> closest;
+    std::map<std::string, const human_robot_distance::RegionDistance *> closest;
     for(const auto & region : distances.regions)
     {
       auto & chosen = closest[region.region];
