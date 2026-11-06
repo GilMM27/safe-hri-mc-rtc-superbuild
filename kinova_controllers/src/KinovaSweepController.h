@@ -2,7 +2,7 @@
 
 #include <mc_control/mc_controller.h>
 #include <mc_control/fsm/Controller.h>
-#include <mc_mujoco/SmplhDistanceSnapshot.h>
+#include <human_robot_distance_api/DistanceSnapshot.h>
 #include "SSMPFLConstraint.h"
 #include "SSMPFLMath.h"
 #include "SSMPFLRelaxation.h"
@@ -30,7 +30,7 @@ private:
   void stopAtAvailablePosture();
   void stopSweepAtAvailableJoint1();
   double sampledOrModelJoint1() const;
-  const mc_mujoco::SmplhDistanceSnapshot * distanceSnapshot() const;
+  const human_robot_distance::Snapshot * distanceSnapshot() const;
   double regionDistance(const std::string & region) const;
   std::string bindingRegions() const;
   std::string uncontrollableRegions() const;

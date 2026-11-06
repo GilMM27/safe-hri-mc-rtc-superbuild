@@ -50,11 +50,11 @@ KinovaHoldController::KinovaHoldController(mc_rbdyn::RobotModulePtr rm,
   mc_rtc::log::success("KinovaHoldController initialized");
 }
 
-const mc_mujoco::SmplhDistanceSnapshot * KinovaHoldController::distanceSnapshot() const
+const human_robot_distance::Snapshot * KinovaHoldController::distanceSnapshot() const
 {
-  static const std::string key = "SMPLH::DistanceSnapshot";
+  static const std::string key = human_robot_distance::datastoreKey;
   if(!datastore().has(key)) return nullptr;
-  const auto & snapshot = datastore().get<mc_mujoco::SmplhDistanceSnapshot>(key);
+  const auto & snapshot = datastore().get<human_robot_distance::Snapshot>(key);
   return snapshot.ready && snapshot.error.empty() ? &snapshot : nullptr;
 }
 
@@ -72,7 +72,7 @@ std::string KinovaHoldController::regionStatus(const std::string & region) const
 {
   const auto * snapshot = distanceSnapshot();
   if(!snapshot) return "Waiting for distance sample";
-  const mc_mujoco::SmplhRegionDistance * closest = nullptr;
+  const human_robot_distance::RegionDistance * closest = nullptr;
   for(const auto & value : snapshot->regions)
   {
     if(value.region != region) continue;

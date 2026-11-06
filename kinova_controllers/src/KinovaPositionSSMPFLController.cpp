@@ -236,11 +236,11 @@ void KinovaPositionSSMPFLController::reset(const mc_control::ControllerResetData
   speedPlot_ = SpeedPlotSample{};
 }
 
-const mc_mujoco::SmplhDistanceSnapshot * KinovaPositionSSMPFLController::distanceSnapshot() const
+const human_robot_distance::Snapshot * KinovaPositionSSMPFLController::distanceSnapshot() const
 {
-  static const std::string key = "SMPLH::DistanceSnapshot";
+  static const std::string key = human_robot_distance::datastoreKey;
   if(!datastore().has(key)) return nullptr;
-  const auto & snapshot = datastore().get<mc_mujoco::SmplhDistanceSnapshot>(key);
+  const auto & snapshot = datastore().get<human_robot_distance::Snapshot>(key);
   return snapshot.ready && snapshot.error.empty() ? &snapshot : nullptr;
 }
 
@@ -282,7 +282,7 @@ bool KinovaPositionSSMPFLController::updateSafetyRows()
   { holdTarget("distance sample stale or timestamp invalid"); return false; }
   if(snapshot->regions.size() != regions.size() * links.size())
   { holdTarget("missing monitored region/link pairs"); return false; }
-  std::map<std::pair<std::string, std::string>, const mc_mujoco::SmplhRegionDistance *> samples;
+  std::map<std::pair<std::string, std::string>, const human_robot_distance::RegionDistance *> samples;
   for(const auto & sample : snapshot->regions)
     if(!samples.emplace(std::make_pair(sample.region, sample.link), &sample).second)
     { holdTarget("duplicate region/link pair"); return false; }

@@ -49,7 +49,7 @@ mapping region names to SMPL-H joint indexes.
 
 The native worker processes the latest immutable human-pose and robot-transform
 snapshot in the background. Before each controller run, completed results are
-published as `SMPLH::DistanceSnapshot` in the datastore. Results include sample
+published as `HumanRobotDistance::Snapshot` in the datastore. Results include sample
 age, motion frame, readiness, per-region and per-link closest points, selected
 robot geom, and clearance. The playback bridge compares each human region with
 MuJoCo group 2 geometry on the seven movable Kinova joint links. The fixed

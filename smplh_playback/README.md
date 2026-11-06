@@ -6,6 +6,11 @@ body model. `mc_mujoco` shows the moving human beside Kinova and draws the
 distance arrows. `mc_rtc_gui` shows controller data but does not contain the
 MuJoCo scene.
 
+The bridge and controllers use the
+[human_robot_distance_api](https://github.com/GilMM27/human_robot_distance_api) header for
+the `HumanRobotDistance::Snapshot` datastore type. The superbuild installs this
+header package before building the bridge.
+
 Run these commands from the superbuild repository root unless noted.
 
 ## 1. Download the licensed data

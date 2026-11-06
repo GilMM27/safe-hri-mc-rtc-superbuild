@@ -33,7 +33,7 @@ int main()
     worker.configure(model, {{0, 1}}, {"roof"}, faces);
     worker.submit(1, 1, 0, vertices, 4, data, model, 0);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    mc_mujoco::SmplhDistanceSnapshot result;
+    human_robot_distance::Snapshot result;
     do
     {
       result = worker.latest();

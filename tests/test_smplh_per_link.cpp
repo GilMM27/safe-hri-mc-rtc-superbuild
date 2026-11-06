@@ -38,7 +38,7 @@ int main()
     mc_mujoco::SmplhDistanceWorker worker;
     worker.configure(model, {{0}, {0}}, {"torso", "head"}, faces, "kinova_", 2, true);
     worker.submit(1, 0, 0, vertices, 3, nullptr, 1.0, true, data, model, 0);
-    mc_mujoco::SmplhDistanceSnapshot result;
+    human_robot_distance::Snapshot result;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     do
     {

@@ -1,5 +1,5 @@
 #pragma once
-#include "SmplhDistanceSnapshot.h"
+#include <human_robot_distance_api/DistanceSnapshot.h>
 
 #include <fcl/fcl.h>
 #include <sch/CD/CD_Pair.h>
@@ -122,11 +122,11 @@ class SmplhDistanceWorker
   std::mutex mutex_;
   std::condition_variable cv_;
   std::unique_ptr<SmplhQueryInput> pending_;
-  SmplhDistanceSnapshot completed_;
+  human_robot_distance::Snapshot completed_;
   bool stopping_ = false;
   std::thread thread_;
 
-  void decorateWitness(SmplhRegionDistance & candidate, size_t robotIndex,
+  void decorateWitness(human_robot_distance::RegionDistance & candidate, size_t robotIndex,
                        const Region & region, const SmplhQueryInput & input) const
   {
     candidate.robot_body = robots_[robotIndex].body;
@@ -261,7 +261,7 @@ class SmplhDistanceWorker
     }
   }
 
-  void queryApproximate(SmplhDistanceSnapshot & snapshot,
+  void queryApproximate(human_robot_distance::Snapshot & snapshot,
                         const std::vector<std::unique_ptr<fcl::CollisionObjectd>> & robotObjects,
                         const SmplhQueryInput & input) const
   {
@@ -284,7 +284,7 @@ class SmplhDistanceWorker
         });
         bool have = false;
         double bestDistance = std::numeric_limits<double>::infinity();
-        SmplhRegionDistance best;
+        human_robot_distance::RegionDistance best;
         size_t bestRobot = robots_.size();
         for(const auto & entry : candidates)
         {
@@ -297,7 +297,7 @@ class SmplhDistanceWorker
           const double squared = pair.getDistanceWithoutPenetrationDepth();
           ++snapshot.queried_pairs;
           if(!std::isfinite(squared)) throw std::runtime_error("SCH approximate distance failed");
-          SmplhRegionDistance candidate;
+          human_robot_distance::RegionDistance candidate;
           candidate.region = region.name;
           candidate.robot_geometry = robot.name;
           if(squared <= 0)
@@ -358,10 +358,10 @@ class SmplhDistanceWorker
     }
   }
 
-  SmplhDistanceSnapshot query(const SmplhQueryInput & input)
+  human_robot_distance::Snapshot query(const SmplhQueryInput & input)
   {
     const auto preparationStart = std::chrono::steady_clock::now();
-    SmplhDistanceSnapshot snapshot;
+    human_robot_distance::Snapshot snapshot;
     if(input.frame != humanModelFrame_)
     {
       for(size_t i=0;i<regions_.size();++i)
@@ -444,7 +444,7 @@ class SmplhDistanceWorker
       for(size_t i : linkRobotIndices_[link])
         candidates.emplace_back(region.bounds.distance(robotObjects[i]->getAABB()), i);
       std::sort(candidates.begin(), candidates.end());
-      bool have = false; SmplhRegionDistance best; double bestDistance = std::numeric_limits<double>::infinity();
+      bool have = false; human_robot_distance::RegionDistance best; double bestDistance = std::numeric_limits<double>::infinity();
       size_t bestIndex = robots_.size();
       for(const auto & entry : candidates)
       {
@@ -473,7 +473,7 @@ class SmplhDistanceWorker
         bool intersecting = fcl::collide(&human, &object, collisionRequest, collisionResult) > 0;
         snapshot.collision_duration_seconds +=
             std::chrono::duration<double>(std::chrono::steady_clock::now()-collisionStart).count();
-        SmplhRegionDistance candidate; candidate.region = region.name; candidate.robot_geometry = robot.name;
+        human_robot_distance::RegionDistance candidate; candidate.region = region.name; candidate.robot_geometry = robot.name;
         if(intersecting)
         {
           candidate.distance = 0;
@@ -537,7 +537,7 @@ class SmplhDistanceWorker
       std::unique_ptr<SmplhQueryInput> input;
       { std::unique_lock<std::mutex> lock(mutex_); cv_.wait(lock,[&]{return stopping_ || pending_;});
         if(stopping_) return; input=std::move(pending_); }
-      SmplhDistanceSnapshot result;
+      human_robot_distance::Snapshot result;
       const auto start = std::chrono::steady_clock::now();
       try { result=query(*input); }
       catch(const std::exception & e)
@@ -708,7 +708,7 @@ public:
     }
     {std::lock_guard<std::mutex> lock(mutex_); pending_=std::move(input);} cv_.notify_one();
   }
-  SmplhDistanceSnapshot latest() const
+  human_robot_distance::Snapshot latest() const
   {
     auto * self=const_cast<SmplhDistanceWorker *>(this);
     std::lock_guard<std::mutex> lock(self->mutex_); return self->completed_;

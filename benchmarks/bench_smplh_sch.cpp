@@ -76,7 +76,7 @@ int main(int argc, char ** argv)
       const uint64_t sequence = static_cast<uint64_t>(sample + 1);
       worker.submit(sequence, static_cast<uint32_t>(sequence), sample*.025,
                     vertices.data(), static_cast<uint32_t>(vertices.size()/3), data, model, 0);
-      mc_mujoco::SmplhDistanceSnapshot result;
+      human_robot_distance::Snapshot result;
       const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
       do
       {

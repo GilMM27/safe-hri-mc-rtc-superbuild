@@ -4,7 +4,7 @@
 
 #include <mc_control/mc_controller.h>
 #include <mc_control/fsm/Controller.h>
-#include <mc_mujoco/SmplhDistanceSnapshot.h>
+#include <human_robot_distance_api/DistanceSnapshot.h>
 #include <mc_tasks/PositionTask.h>
 #include <mc_tasks/PostureTask.h>
 #include <RBDyn/FD.h>
@@ -32,7 +32,7 @@ private:
     double margin = 0;
   };
 
-  const mc_mujoco::SmplhDistanceSnapshot * distanceSnapshot() const;
+  const human_robot_distance::Snapshot * distanceSnapshot() const;
   bool updateSafetyRows();
   void holdTarget(const std::string & reason);
   void addSpeedPlot();

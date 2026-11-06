@@ -35,7 +35,7 @@ int main()
                        x, -1, -1, 1000, 0, 0, x, 1, -1, 1000, 0, 0, x, 0, 1};
       ++sequence;
       worker.submit(sequence, sequence, 0, vertices, 8, data, model, 0);
-      mc_mujoco::SmplhDistanceSnapshot snapshot;
+      human_robot_distance::Snapshot snapshot;
       auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
       do
       {
