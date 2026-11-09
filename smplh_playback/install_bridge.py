@@ -53,8 +53,25 @@ def timing_readout(text):
                         '                   smplh_distance.approximate ? "approximate" : "exact");')
 
 
+def fix_implot_stride(source):
+    """Pass Point's byte stride in ImPlot's seventh argument, after offset."""
+    source = Path(source)
+    header = source / 'ext/implot/implot.h'
+    plot = source / 'ext/mc_rtc-imgui/Plot.cpp'
+    if not header.exists() or not plot.exists():
+        return
+    if 'ImPlotLineFlags flags=0, int offset=0, int stride=' not in header.read_text():
+        return
+    old = 'p.points.size(), 0, sizeof(Point))'
+    new = 'p.points.size(), 0, 0, sizeof(Point))'
+    text = plot.read_text()
+    if old in text:
+        plot.write_text(text.replace(old, new))
+
+
 def install(source):
     source=Path(source); here=Path(__file__).parent
+    fix_implot_stride(source)
     cpp=source/'src/mj_sim.cpp'; header=source/'src/mj_sim_impl.h'
     c=cache_model_override(cpp.read_text()); h=header.read_text()
     if BRIDGE_MARKER in c:
