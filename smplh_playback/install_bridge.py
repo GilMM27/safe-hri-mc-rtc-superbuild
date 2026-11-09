@@ -57,7 +57,34 @@ def install(source):
     source=Path(source); here=Path(__file__).parent
     cpp=source/'src/mj_sim.cpp'; header=source/'src/mj_sim_impl.h'
     c=cache_model_override(cpp.read_text()); h=header.read_text()
+    c=c.replace("smplh_bridge_.contactStats(model, data, smplh_contacts, smplh_penetration)",
+                "smplh_bridge_.latestContactStats(smplh_contacts, smplh_penetration)")
     if BRIDGE_MARKER in c:
+        if 'smplh_bridge_.configureContactSizes(controller->controller().config());' not in c:
+            marker = '  smplh_bridge_.update(model, data);'
+            if marker not in c:
+                raise RuntimeError('Cannot locate initial SMPL-H playback update')
+            c = c.replace(marker,
+                          '  smplh_bridge_.configureContactSizes(controller->controller().config());\n' + marker, 1)
+        if 'SMPL-H contacts: %d' not in c:
+            marker = '    const auto smplh_distance = smplh_bridge_.snapshot();'
+            if c.count(marker) != 1:
+                raise RuntimeError('Cannot locate SMPL-H status display')
+            c = c.replace(marker, '    int smplh_contacts = 0; double smplh_penetration = 0;\n'
+                          '    smplh_bridge_.latestContactStats(smplh_contacts, smplh_penetration);\n'
+                          '    ImGui::Text("SMPL-H contacts: %d | deepest %.1f mm", smplh_contacts, 1000.0 * smplh_penetration);\n'
+                          + marker)
+        if 'smplh_bridge_.beforeStep(model, data);' not in c:
+            marker = '  mj_step(model, data);'
+            if c.count(marker) != 1:
+                raise RuntimeError('Unsupported mc_mujoco physics step')
+            c = c.replace(marker, '  smplh_bridge_.beforeStep(model, data);\n' + marker)
+        if 'smplh_bridge_.captureContactStats(model, data);' not in c:
+            c = c.replace('  mj_step(model, data);\n', '  mj_step(model, data);\n  smplh_bridge_.captureContactStats(model, data);\n', 1)
+        if 'smplh_bridge_.guardPositionControls(model, data);' not in c:
+            c = c.replace('  smplh_bridge_.beforeStep(model, data);\n  mj_step(model, data);',
+                          '  smplh_bridge_.beforeStep(model, data);\n  smplh_bridge_.guardPositionControls(model, data);\n  mj_step(model, data);')
+        cpp.write_text(c)
         shutil.copyfile(here/'SmplhDistanceWorker.h', source/'src/SmplhDistanceWorker.h')
         shutil.copyfile(here/'NativeSmplhPlayback.h', source/'src/SmplhBridge.h')
         return
@@ -65,7 +92,7 @@ def install(source):
         raise RuntimeError('Existing mc_mujoco bridge is from an older checkout; use a clean mc_mujoco clone')
     replacements=[
         ('  mj_forward(model, data);','  mj_forward(model, data);\n  smplh_bridge_.update(model, data);'),
-        ('  mj_step(model, data);','  mj_step(model, data);\n  mj_forward(model, data);\n  smplh_bridge_.update(model, data);'),
+        ('  mj_step(model, data);','  smplh_bridge_.beforeStep(model, data);\n  smplh_bridge_.guardPositionControls(model, data);\n  mj_step(model, data);\n  smplh_bridge_.captureContactStats(model, data);\n  mj_forward(model, data);\n  smplh_bridge_.update(model, data);'),
         ('  mjv_updateScene(model, data, &options, &pert, &camera, mjCAT_ALL, &scene);',
          '''#ifdef USE_UI_ADAPTER
   smplh_bridge_.upload(model, &platform_ui_adapter->mjr_context());
@@ -77,6 +104,9 @@ def install(source):
     for before,after in replacements:
         if c.count(before)!=1: raise RuntimeError(f'Unsupported mc_mujoco source: {before}')
         c=c.replace(before,after)
+    c = c.replace('  smplh_bridge_.update(model, data);',
+                  '  smplh_bridge_.configureContactSizes(controller->controller().config());\n'
+                  '  smplh_bridge_.update(model, data);', 1)
     c=c.replace('    ImGui::Text("Wallclock time: %.2fs", wallclock);',
                 '    ImGui::Text("Wallclock time: %.2fs", wallclock);\n'
                 '    const auto smplh_distance = smplh_bridge_.snapshot();\n'
@@ -105,6 +135,11 @@ def install(source):
     if not match: raise RuntimeError('Cannot locate MjSimImpl definition')
     h=h[:match.end()]+'\n  SmplhBridge smplh_bridge_;\n'+h[match.end():]
     h='#include "SmplhBridge.h"\n'+h
+    c = c.replace('    const auto smplh_distance = smplh_bridge_.snapshot();',
+                  '    int smplh_contacts = 0; double smplh_penetration = 0;\n'
+                  '    smplh_bridge_.latestContactStats(smplh_contacts, smplh_penetration);\n'
+                  '    ImGui::Text("SMPL-H contacts: %d | deepest %.1f mm", smplh_contacts, 1000.0 * smplh_penetration);\n'
+                  '    const auto smplh_distance = smplh_bridge_.snapshot();')
     cpp.write_text(BRIDGE_MARKER + timing_readout(c)); header.write_text(h)
     shutil.copyfile(here/'NativeSmplhPlayback.h',source/'src/SmplhBridge.h')
     shutil.copyfile(here/'SmplhDistanceWorker.h',source/'src/SmplhDistanceWorker.h')

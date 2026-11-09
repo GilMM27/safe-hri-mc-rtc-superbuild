@@ -1,5 +1,6 @@
 """Synthetic, unrestricted fixtures exercise the real SMPL-H and MuJoCo tooling."""
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -74,6 +75,62 @@ class PipelineTests(unittest.TestCase):
                 bid=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_BODY,f'smplh_body_{i}')
                 np.testing.assert_allclose(data.xpos[bid],joints[frame,i],atol=1e-6)
                 np.testing.assert_allclose(self.vertices[frame,4*i],joints[frame,i],atol=1e-6)
+
+    def test_contact_proxies_cover_cached_surface(self):
+        import mujoco
+        from smplh_playback.contact_proxies import SEGMENTS
+        model=mujoco.MjModel.from_xml_path(str(self.cache/'human.xml'))
+        data=mujoco.MjData(model)
+        for frame in range(3):
+            offset=0
+            for index in range(52):
+                name='smplh_root' if index==0 else f'smplh_joint_{index}'
+                joint=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_JOINT,name)
+                size=7 if index==0 else 4
+                data.qpos[model.jnt_qposadr[joint]:model.jnt_qposadr[joint]+size]=self.qpos[frame,offset:offset+size]
+                offset+=size
+            mujoco.mj_forward(model,data)
+            for name,index,_ in SEGMENTS:
+                skeleton=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_BODY,f'smplh_body_{index}')
+                contact=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_BODY,f'smplh_contact_{index}')
+                mocap=model.body_mocapid[contact]
+                data.mocap_pos[mocap]=data.xpos[skeleton]
+                data.mocap_quat[mocap]=data.xquat[skeleton]
+            mujoco.mj_forward(model,data)
+            for name,index,_ in SEGMENTS:
+                geom=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_GEOM,f'smplh_contact_geom_{index}')
+                ids=np.unique(self.faces[self.regions[name]].ravel())
+                points=(self.vertices[frame,ids]-data.geom_xpos[geom]) @ data.geom_xmat[geom].reshape(3,3)
+                self.assertEqual(model.geom_type[geom],mujoco.mjtGeom.mjGEOM_CAPSULE)
+                radius,half=model.geom_size[geom,:2]
+                outside=np.linalg.norm(np.c_[points[:,:2],np.maximum(np.abs(points[:,2])-half,0)],axis=1)-radius
+                self.assertLessEqual(float(outside.max()),1e-4,(frame,name))
+
+    def test_refit_upgrades_terminal_boxes_to_capsules(self):
+        import xml.etree.ElementTree as ET
+        from smplh_playback.refit_contacts import refit
+        with tempfile.TemporaryDirectory() as tmp:
+            cache=Path(tmp)/'cache'
+            shutil.copytree(self.cache,cache)
+            xml=cache/'human.xml'
+            tree=ET.parse(xml)
+            for joint in (15,20,21,7,8):
+                geom=tree.getroot().find(f'./worldbody/body[@name="smplh_contact_{joint}"]/geom')
+                geom.set('type','box')
+                geom.set('pos','0 0 0')
+                geom.set('size','.1 .1 .1')
+                geom.attrib.pop('fromto')
+            tree.write(xml)
+            refit(cache)
+            tree=ET.parse(xml)
+            for joint in (15,20,21,7,8):
+                geom=tree.getroot().find(f'./worldbody/body[@name="smplh_contact_{joint}"]/geom')
+                self.assertEqual(geom.get('type'),'capsule')
+                self.assertIsNone(geom.get('pos'))
+                self.assertEqual(len(np.fromstring(geom.get('fromto'),sep=' ')),6)
+            import mujoco
+            mujoco.MjModel.from_xml_path(str(xml))
+
 
     def test_regions(self):
         self.assertEqual(set(self.regions),set(REGIONS))

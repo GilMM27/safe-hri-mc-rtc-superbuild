@@ -165,8 +165,9 @@ separate interface for a physical Kinova Gen3.
 An optional AMASS + SMPL-H pipeline drives a kinematic articulated human in
 the same MuJoCo scene as Kinova and measures each body region against the
 reconstructed SMPL-H triangle surface. The human surface and the MuJoCo
-collision/debug geoms are separate, so a later experiment can compare mesh
-surface distances with simplified collision elements. See
+collision proxies are separate: by default, subject-fitted proxies follow mocap
+and create physical contacts with Kinova while mesh surface distances remain
+available to the controller. See
 [the playback guide](smplh_playback/README.md) for model/data setup, build
 option, coordinate alignment, launch commands, region definitions, distance
 records, and limitations.
