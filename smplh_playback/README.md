@@ -154,8 +154,7 @@ bridge and a prepared cache.
 Newly prepared caches contain collision capsules fitted to 14 body regions.
 By default, `SMPLH_CONTACT_MODE=kinematic` makes the capsules follow the recorded
 motion without yielding. They contact collision-enabled Kinova geoms, and the
-simulator adjusts robot position targets to help prevent overlap. A 5 cm contact
-margin gives the solver room to react. The visible SMPL-H surface and distance
+simulator adjusts robot position targets to help prevent overlap. The visible SMPL-H surface and distance
 queries are separate from these collision shapes. Contacts can still penetrate
 slightly, so this mode is for solid obstacles rather than force measurements.
 
