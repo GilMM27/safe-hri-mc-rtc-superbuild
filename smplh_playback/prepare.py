@@ -106,10 +106,14 @@ def main():
         ET.SubElement(body,'inertial',pos='0 0 0',mass='.01',diaginertia='.0001 .0001 .0001')
         ET.SubElement(body,'geom',type='sphere',size='.025',contype='0',conaffinity='0',group='3',rgba='.9 .5 .2 0.3')
         bodies.append(body)
+    from .contact_proxies import add_contact_proxies
+    add_contact_proxies(wb, shaped[0].numpy(), rest, model.lbs_weights.numpy(), REGIONS)
     ET.ElementTree(root).write(out/'human.xml')
     (out/'smplh.yaml').write_text('xmlModelPath: '+json.dumps(str((out/'human.xml').resolve()))+'\n')
     from .native_cache import write_native_cache
     write_native_cache(out)
+    from .refit_contacts import refit
+    refit(out)
     print(f'Prepared {n} frames at {fps} FPS in {out}')
 
 if __name__ == '__main__': main()

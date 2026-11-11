@@ -148,3 +148,39 @@ For the opt-in directional SSM+PFL simulation baseline, example regional
 configuration, equations, and measured residuals, see
 [Kinova SSM+PFL](../doc/ssm-pfl.md). The baseline requires the updated native
 bridge and a prepared cache.
+
+## Physical human contacts
+
+Newly prepared caches contain collision capsules fitted to 14 body regions.
+By default, `SMPLH_CONTACT_MODE=kinematic` makes the capsules follow the recorded
+motion without yielding. They contact collision-enabled Kinova geoms, and the
+simulator adjusts robot position targets to help prevent overlap. The visible
+SMPL-H surface and distance queries are separate from these collision shapes.
+MuJoCo's compliant solver can report simulated contact forces while allowing
+some geometric penetration. These are not calibrated physical measurements:
+the moving human capsules are mocap bodies, whose motion does not enter the
+solver as body velocity, so impact forces in particular can be underestimated.
+
+Set `SMPLH_CONTACT_MODE=off` for visual-only playback. To inspect the capsules,
+set `SMPLH_CONTACT_DEBUG=1` or enable geom group 4 in the MuJoCo viewer.
+
+### Size contact shapes by region
+
+Add `SMPLHContactSizes` to the active controller YAML, such as
+`~/.config/mc_rtc/controllers/KinovaPositionSSMPFLController.yaml`:
+
+```yaml
+SMPLHContactSizes:
+  torso: {radius_scale: 0.85}
+  left_forearm: {radius_scale: 0.8, length_scale: 1.0}
+  head: {radius_scale: 0.9, offset_world_m: [0.0, 0.0, 0.03]}
+```
+
+`radius_scale` changes thickness; `length_scale` changes the straight segment
+between the rounded ends; `scale` changes both. A single number, such as
+`left_forearm: 0.85`, scales the whole capsule. `offset_world_m` shifts a
+capsule in world coordinates, so the example raises the head capsule by 3 cm.
+Unlisted regions keep their fitted sizes. These settings affect collision
+shapes only, not the visible surface or distance-query mesh. Values below `1`
+may leave visible skin outside a capsule. Restart `mc_mujoco` after editing the
+YAML; you do not need to regenerate the cache.

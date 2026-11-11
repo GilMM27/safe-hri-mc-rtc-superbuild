@@ -18,6 +18,12 @@ The safety controllers need fresh human-to-robot distance samples from that
 bridge; the position controller holds its current target when samples are
 unavailable.
 
+To use one set of physical human collision sizes across SMPL-H caches, add
+`SMPLHContactSizes` to the active controller YAML, including
+`~/.config/mc_rtc/controllers/KinovaPositionSSMPFLController.yaml` when using
+that controller. The MuJoCo bridge applies the scales when it starts; see the
+[contact shape configuration](../smplh_playback/README.md#size-contact-shapes-by-region).
+
 ## Run the sweep controller
 
 Set `MainRobot: Kinova`, `Enabled: KinovaSweepController`, and `Timestep: 0.001`

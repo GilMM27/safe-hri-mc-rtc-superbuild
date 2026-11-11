@@ -8,7 +8,9 @@ These notes describe cache behavior and distance measurement choices.
 Python resolves the licensed AMASS motion and SMPL-H model once. The resulting
 cache stores poses, vertices, faces, regions, an MJCF human, and a binary native
 cache. The native bridge reads it directly; `mc_mujoco` remains the simulator.
-The human is kinematic, and its display and debug geoms have no contact bits.
+The human is kinematic. Display and skeleton debug geoms have no contact bits;
+separate mocap proxies create Kinova contacts by default. Set
+`SMPLH_CONTACT_MODE=off` to disable physical human contacts.
 
 Playback selects `floor(time * fps)`, so a simulation reset restores frame
 zero. `SMPLH_LOOP=1` wraps frame indices; otherwise the final frame is held.

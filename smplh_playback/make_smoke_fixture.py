@@ -41,6 +41,9 @@ def write_human_xml(output, vertices, faces):
         ET.SubElement(body, 'inertial', pos='0 0 0', mass='.01', diaginertia='.0001 .0001 .0001')
         ET.SubElement(body, 'geom', type='sphere', size='.025', contype='0', conaffinity='0', group='3')
         bodies.append(body)
+    from .contact_proxies import add_contact_proxies
+    rest_joints = np.array([[0, 0, 1]] + [[.03*i, 0, 1] for i in range(1, 52)])
+    add_contact_proxies(world, vertices[0], rest_joints, np.repeat(np.eye(52), 4, axis=0), REGIONS)
     ET.ElementTree(root).write(output / 'human.xml')
     (output / 'smplh.yaml').write_text(f'xmlModelPath: {json.dumps(str((output / "human.xml").resolve()))}\n')
 
