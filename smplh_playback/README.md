@@ -154,9 +154,12 @@ bridge and a prepared cache.
 Newly prepared caches contain collision capsules fitted to 14 body regions.
 By default, `SMPLH_CONTACT_MODE=kinematic` makes the capsules follow the recorded
 motion without yielding. They contact collision-enabled Kinova geoms, and the
-simulator adjusts robot position targets to help prevent overlap. The visible SMPL-H surface and distance
-queries are separate from these collision shapes. Contacts can still penetrate
-slightly, so this mode is for solid obstacles rather than force measurements.
+simulator adjusts robot position targets to help prevent overlap. The visible
+SMPL-H surface and distance queries are separate from these collision shapes.
+MuJoCo's compliant solver can report simulated contact forces while allowing
+some geometric penetration. These are not calibrated physical measurements:
+the moving human capsules are mocap bodies, whose motion does not enter the
+solver as body velocity, so impact forces in particular can be underestimated.
 
 Set `SMPLH_CONTACT_MODE=off` for visual-only playback. To inspect the capsules,
 set `SMPLH_CONTACT_DEBUG=1` or enable geom group 4 in the MuJoCo viewer.

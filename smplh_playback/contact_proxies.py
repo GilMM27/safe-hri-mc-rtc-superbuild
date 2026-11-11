@@ -31,7 +31,7 @@ def add_contact_proxies(world, vertices, joints, weights, definitions):
             raise ValueError(f'Cannot fit contact proxy for {name}: no skin vertices')
         body = ET.SubElement(world, 'body', name=f'smplh_contact_{joint}', mocap='true')
         attrs = dict(name=f'smplh_contact_geom_{joint}', contype='0', conaffinity='0',
-                     group='4', margin='.05', rgba='.9 .4 .1 .35')
+                     group='4', rgba='.9 .4 .1 .35')
         axis = joints[end] - joints[joint] if end is not None else capsule_axis(points)
         length = np.linalg.norm(axis)
         if length < 1e-10:

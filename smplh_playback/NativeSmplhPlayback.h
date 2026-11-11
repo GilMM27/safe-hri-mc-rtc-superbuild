@@ -130,7 +130,6 @@ class SmplhBridge
     for(int geom : geoms)
     {
       m->geom_conaffinity[geom] = bit;
-      m->geom_margin[geom] = std::max(m->geom_margin[geom], mjtNum(.05));
       m->body_conaffinity[m->geom_bodyid[geom]] |= bit;
       if(debug && std::string(debug) == "1") m->geom_group[geom] = 2;
     }

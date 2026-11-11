@@ -48,7 +48,7 @@ def refit(cache):
             geom = bodies.find(f'./body[@name="smplh_contact_{joint}"]/geom')
             if geom is None or name not in archive:
                 raise ValueError(f'Missing contact proxy or region: {name}; regenerate the cache')
-            geom.set('margin', '.05')
+            geom.attrib.pop('margin', None)
             ids = np.unique(faces[archive[name]].ravel())
             radius = 0.0
             if geom.get('fromto') is not None:

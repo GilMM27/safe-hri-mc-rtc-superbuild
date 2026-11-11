@@ -78,6 +78,8 @@ int main(int argc, char ** argv)
       bridge.configureContactSizes(config);
     }
     bridge.update(m, d);
+    require(m->geom_margin[headGeom] == 0,
+            "New SMPL-H contact proxy unexpectedly has a margin");
     if(configured)
     {
       require(std::abs(m->geom_size[3*headGeom] - 5.0*headRadius) < 1e-9
