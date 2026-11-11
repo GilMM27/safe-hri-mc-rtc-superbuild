@@ -53,8 +53,56 @@ def timing_readout(text):
                         '                   smplh_distance.approximate ? "approximate" : "exact");')
 
 
+def fix_implot_stride(source):
+    """Pass Point's byte stride in ImPlot's seventh argument, after offset."""
+    source = Path(source)
+    header = source / 'ext/implot/implot.h'
+    plot = source / 'ext/mc_rtc-imgui/Plot.cpp'
+    if not header.exists() or not plot.exists():
+        return
+    if 'ImPlotLineFlags flags=0, int offset=0, int stride=' not in header.read_text():
+        return
+    old = 'p.points.size(), 0, sizeof(Point))'
+    new = 'p.points.size(), 0, 0, sizeof(Point))'
+    text = plot.read_text()
+    if old in text:
+        plot.write_text(text.replace(old, new))
+
+
+def limit_closest_speed_plot(source):
+    """Keep the closest-pair speed plot on a rolling 30-second time axis."""
+    plot = Path(source) / 'ext/mc_rtc-imgui/Plot.cpp'
+    if not plot.exists():
+        return
+    text = plot.read_text()
+    marker = '  // Rolling closest-pair speed plot installed by the superbuild.'
+    if marker in text:
+        return
+    include = '#include "Plot.h"\n'
+    append = '  plot.points.push_back({x, y});\n'
+    if text.count(include) != 1 or text.count(append) != 1:
+        raise RuntimeError('Unsupported mc_mujoco plot renderer')
+    text = text.replace(include, include + '#include <algorithm>\n', 1)
+    text = text.replace(append, '''  // Rolling closest-pair speed plot installed by the superbuild.
+  if(title_ == "SSM+PFL closest robot approach speed (m/s)")
+  {
+    if(!plot.points.empty() && x < plot.points.back().x)
+      plot.points.clear(); // Simulation time restarted.
+    const double start = std::max(0.0, x - 30.0);
+    const auto first = std::lower_bound(plot.points.begin(), plot.points.end(), start,
+                                        [](const Point & point, double time) { return point.x < time; });
+    plot.points.erase(plot.points.begin(), first);
+    x_limits_ = {{start, std::max(30.0, x)}};
+  }
+  plot.points.push_back({x, y});
+''', 1)
+    plot.write_text(text)
+
+
 def install(source):
     source=Path(source); here=Path(__file__).parent
+    fix_implot_stride(source)
+    limit_closest_speed_plot(source)
     cpp=source/'src/mj_sim.cpp'; header=source/'src/mj_sim_impl.h'
     c=cache_model_override(cpp.read_text()); h=header.read_text()
     c=c.replace("smplh_bridge_.contactStats(model, data, smplh_contacts, smplh_penetration)",
