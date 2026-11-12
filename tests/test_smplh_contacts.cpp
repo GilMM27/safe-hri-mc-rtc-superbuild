@@ -1,4 +1,4 @@
-#include "../smplh_playback/NativeSmplhPlayback.h"
+#include "SmplhBridge.h"
 #include <mc_rtc/Configuration.h>
 #include <iostream>
 #include <tuple>
@@ -12,6 +12,52 @@ void require(bool condition, const char * message)
 int main(int argc, char ** argv)
 {
   if(argc != 2 && argc != 3) return 2;
+  if(argc == 3 && std::string(argv[2]) == "estimate")
+  {
+    setenv("SMPLH_DISTANCE_DISABLE", "1", 1);
+    char error[1024] = {};
+    mjModel * model = mj_loadXML(argv[1], nullptr, error, sizeof(error));
+    if(!model) { std::cerr << error << '\n'; return 2; }
+    if(std::getenv("SMPLH_TEST_ELLIPTIC")) model->opt.cone = mjCONE_ELLIPTIC;
+    if(std::getenv("SMPLH_TEST_SPARSE")) model->opt.jacobian = mjJAC_SPARSE;
+    mjData * data = mj_makeData(model);
+    try
+    {
+      SmplhBridge bridge;
+      bridge.update(model, data);
+      const int torso = mj_name2id(model, mjOBJ_GEOM, "smplh_contact_geom_0");
+      for(int geom = 0; geom < model->ngeom; ++geom)
+      {
+        const char * name = mj_id2name(model, mjOBJ_GEOM, geom);
+        if(name && std::string(name).find("smplh_contact_geom_") == 0 && geom != torso)
+          model->geom_contype[geom] = model->geom_conaffinity[geom] = 0;
+      }
+      const int joint = mj_name2id(model, mjOBJ_JOINT, "probe_root");
+      const int q = model->jnt_qposadr[joint], v = model->jnt_dofadr[joint];
+      for(int axis = 0; axis < 3; ++axis)
+        data->qpos[q+axis] = data->geom_xpos[3*torso+axis]
+                             + data->geom_xmat[9*torso+3*axis] * (model->geom_size[3*torso] + .025);
+      bridge.beforeStep(model, data);
+      mj_step(model, data);
+      bridge.captureContactStats(model, data);
+      bridge.captureTorqueEstimate(model, data, {v, v+1, v+2}, "kinova_");
+      const auto sample = bridge.contactForces();
+      require(sample.torqueEstimateValid[0], "Single-contact torque estimate unavailable");
+      require(sample.torqueEstimatedNormalN[0] > 0, "Torque estimate has wrong contact-normal sign");
+      require(std::abs(sample.torqueEstimatedNormalN[0] - sample.positiveNormalSumN[0])
+                  < 1e-4 * sample.positiveNormalSumN[0] + 1e-4,
+              "Torque projection disagrees with solved normal force in newtons");
+      data->qpos[q+2] += 4;
+      mj_forward(model, data);
+      mj_step(model, data);
+      bridge.captureContactStats(model, data);
+      bridge.captureTorqueEstimate(model, data, {v, v+1, v+2}, "kinova_");
+      require(!bridge.contactForces().torqueEstimateValid[0], "No-contact sample has an estimate");
+    }
+    catch(const std::exception & e) { std::cerr << e.what() << '\n'; mj_deleteData(data); mj_deleteModel(model); return 1; }
+    mj_deleteData(data); mj_deleteModel(model);
+    return 0;
+  }
   if(argc == 3 && std::string(argv[2]) == "impact")
   {
     setenv("SMPLH_DISTANCE_DISABLE", "1", 1);
@@ -29,10 +75,17 @@ int main(int argc, char ** argv)
           model->opt.iterations = iterations;
           mjData * data = mj_makeData(model);
           double peak = 0;
+          int compared = 0;
           {
             SmplhBridge bridge;
             bridge.update(model, data);
             const int proxy = mj_name2id(model, mjOBJ_GEOM, "smplh_contact_geom_0");
+            for(int geom = 0; geom < model->ngeom; ++geom)
+            {
+              const char * name = mj_id2name(model, mjOBJ_GEOM, geom);
+              if(name && std::string(name).find("smplh_contact_geom_") == 0 && geom != proxy)
+                model->geom_contype[geom] = model->geom_conaffinity[geom] = 0;
+            }
             const int probe = mj_name2id(model, mjOBJ_JOINT, "probe_root");
             const int q = model->jnt_qposadr[probe], v = model->jnt_dofadr[probe];
             for(int axis = 0; axis < 3; ++axis)
@@ -47,13 +100,23 @@ int main(int argc, char ** argv)
               bridge.beforeStep(model, data);
               mj_step(model, data);
               bridge.captureContactStats(model, data);
-              for(double value : bridge.contactForces().positiveNormalSumN)
+              bridge.captureTorqueEstimate(model, data, {v, v+1, v+2}, "kinova_");
+              const auto sample = bridge.contactForces();
+              if(sample.torqueEstimateValid[0] && sample.positiveNormalSumN[0] > 1e-6)
+              {
+                ++compared;
+                require(std::abs(sample.torqueEstimatedNormalN[0] - sample.positiveNormalSumN[0])
+                          < .05 * sample.positiveNormalSumN[0] + 1e-3,
+                        "Impact torque estimate disagrees with solved normal force");
+              }
+              for(double value : sample.positiveNormalSumN)
                 peak = std::max(peak, value);
               bridge.update(model, data);
             }
           }
           mj_deleteData(data); mj_deleteModel(model);
           require(std::isfinite(peak) && peak > 0, "Impact force was missing at a tested speed or timestep");
+          require(compared > 0, "Impact had no valid single-contact force comparison");
         }
     }
     catch(const std::exception & e) { std::cerr << e.what() << '\n'; return 1; }
@@ -194,6 +257,7 @@ int main(int argc, char ** argv)
             "Unexpected or missing contact");
     mj_step(m, d);
     bridge.captureContactStats(m, d);
+    bridge.captureTorqueEstimate(m, d, {v, v+1, v+2}, "kinova_");
     const auto force = bridge.contactForces();
     require(force.valid == !off, "Contact force sample validity does not match contact mode");
     double torso = 0;
@@ -214,9 +278,14 @@ int main(int argc, char ** argv)
       summed += value;
     }
     if(!off && !kinematic)
+    {
       require(std::count_if(force.positiveNormalSumN.begin(), force.positiveNormalSumN.end(),
                             [](double value) { return value > 0; }) > 1,
               "Synthetic simultaneous contact did not reach multiple regions");
+      require(std::none_of(force.torqueEstimateValid.begin(), force.torqueEstimateValid.end(),
+                           [](bool valid) { return valid; }),
+              "Simultaneous contacts produced an ambiguous torque estimate");
+    }
     require(off ? summed == 0 : summed > 0, "Missing post-step contact force");
     const double outwardSpeed = outward[0]*d->qvel[v] + outward[1]*d->qvel[v+1] + outward[2]*d->qvel[v+2];
     require(off ? std::abs(outwardSpeed) < 1e-9 : outwardSpeed > 0,

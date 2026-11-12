@@ -8,24 +8,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from smplh_playback.install_bridge import BRIDGE_MARKER, install
 from smplh_playback.native_cache import write_native_cache
-
-
-class BridgeUpgradeTests(unittest.TestCase):
-    def test_upgrade_installed_bridge_is_idempotent(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp)
-            (source / 'src').mkdir()
-            cpp = source / 'src/mj_sim.cpp'
-            cpp.write_text(BRIDGE_MARKER + '// SMPLH_CACHE model\n  smplh_bridge_.update(model, data);\n  mj_step(model, data);\n    const auto smplh_distance = smplh_bridge_.snapshot();\n')
-            (source / 'src/mj_sim_impl.h').write_text('already installed')
-            install(source)
-            first = cpp.read_text()
-            install(source)
-            self.assertEqual(first, cpp.read_text())
-            self.assertIn('smplh_bridge_.beforeStep(model, data);\n  smplh_bridge_.guardPositionControls(model, data);\n  mj_step(model, data);\n  smplh_bridge_.captureContactStats(model, data);', first)
-            self.assertIn('smplh_bridge_.configureContactSizes(controller->controller().config());\n  smplh_bridge_.update(model, data);', first)
 
 
 @unittest.skipUnless(os.getenv('SMPLH_CONTACT_TEST_BINARY'), 'Set SMPLH_CONTACT_TEST_BINARY to run native contacts')
@@ -63,6 +46,14 @@ class ContactTests(unittest.TestCase):
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_TEST_CONTACT_CONFIG='1'), check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_CONTACT_MODE='kinematic'), check=True)
             subprocess.run([binary, str(scene), 'impact'], env=env, check=True)
+            for elliptic in (False, True):
+                for sparse in (False, True):
+                    estimate_env = dict(env)
+                    if elliptic:
+                        estimate_env['SMPLH_TEST_ELLIPTIC'] = '1'
+                    if sparse:
+                        estimate_env['SMPLH_TEST_SPARSE'] = '1'
+                    subprocess.run([binary, str(scene), 'estimate'], env=estimate_env, check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_CONTACT_MODE='off'), check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_FREEZE_FRAME='1'), check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_LOOP='1'), check=True)

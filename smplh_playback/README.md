@@ -181,8 +181,29 @@ force snapshot. The PositionTask controller does not register these force logs.
 
 `SMPLH_external_joint_torque_norm_Nm` is a separate joint-space diagnostic;
 the log also records external-torque feedback and high-pass compensation states.
-For baseline force experiments, leave the mc_mujoco high-pass compensation
-disabled. These simulated forces are not calibrated physical measurements.
+The owned [Bastien-based simulator fork](https://github.com/GilMM27/mc_mujoco)
+also estimates normal force from its external joint-torque source. It subtracts
+the passive term from `qfrc_constraint + qfrc_passive`, then fits one
+nonnegative normal force to the solved contact Jacobian row over actuated robot
+joints. The estimate is available only when exactly one solved robot contact is
+with SMPL-H, the Jacobian has usable magnitude, and the relative joint-torque
+fit residual is at most 0.5. Other contacts and forces can contaminate the
+torque source; this estimate is a diagnostic, not an independent force sensor.
+
+In `mc_log_ui`, open the current `mc-control-KinovaPositionSSMPFLController`
+log and plot `SMPLH_<region>_positive_normal_sum_N` alongside
+`SMPLH_<region>_torque_estimated_normal_N`. Plot
+`SMPLH_<region>_torque_minus_contact_normal_N` to see their signed difference.
+`SMPLH_<region>_torque_estimate_valid` identifies comparable samples;
+unavailable estimates and differences are logged as NaN so they appear as gaps.
+`SMPLH_torque_estimate_residual_Nm` and
+`SMPLH_torque_estimate_relative_residual` diagnose rejected fits. The old
+`SMPLH_<region>_ForceMaxN` and exceedance fields still compare against the
+solved `mj_contactForce` regional sum, not the torque estimate.
+
+For baseline force experiments, leave external-torque feedback and high-pass
+compensation disabled in mc_mujoco. These simulated forces are not calibrated
+physical measurements.
 Check timestep and solver sensitivity, and compare matched static loads and
 impacts against calibrated force and pressure measurements before making an ISO
 compliance claim. [ISO/PAS 5672:2023](https://www.iso.org/standard/82488.html)

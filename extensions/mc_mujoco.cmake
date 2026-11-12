@@ -22,41 +22,16 @@ endif()
 AptInstall(libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libglew-dev)
 
 option(WITH_SMPLH_PLAYBACK "Enable native SMPL-H cache playback in mc_mujoco (Linux)" OFF)
-set(SMPLH_PATCH_ARGS)
-set(SMPLH_DEPENDS)
+include(${CMAKE_CURRENT_LIST_DIR}/human_robot_distance_api.cmake)
 if(WITH_SMPLH_PLAYBACK)
-  include(${CMAKE_CURRENT_LIST_DIR}/human_robot_distance_api.cmake)
-  list(APPEND SMPLH_DEPENDS human_robot_distance_api)
   if(NOT UNIX OR APPLE)
     message(FATAL_ERROR "The native SMPL-H bridge currently requires Linux")
   endif()
-  set(SMPLH_PATCH_ARGS PATCH_COMMAND
-    "${CMAKE_COMMAND}"
-    "-DSOURCE_DIR=${SOURCE_DESTINATION}/mc_mujoco"
-    "-DBRIDGE_SCRIPT=${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/install_bridge.py"
-    -P "${CMAKE_CURRENT_LIST_DIR}/../cmake/scripts/apply-smplh-bridge.cmake")
 endif()
 
 AddProject(mc_mujoco
-  GITHUB bastien-muraccioli/mc_mujoco
-  GIT_TAG origin/main
+  GITHUB GilMM27/mc_mujoco
+  GIT_TAG origin/feat/smplh-contact-force-estimation
   CMAKE_ARGS -DMUJOCO_ROOT_DIR=${MUJOCO_ROOT_DIR}
-  DEPENDS mc_rtc ${SMPLH_DEPENDS}
-  ${SMPLH_PATCH_ARGS}
+  DEPENDS mc_rtc human_robot_distance_api
 )
-
-if(WITH_SMPLH_PLAYBACK)
-  ExternalProject_Add_Step(mc_mujoco smplh_bridge_refresh
-    COMMAND "${CMAKE_COMMAND}"
-      "-DSOURCE_DIR=${SOURCE_DESTINATION}/mc_mujoco"
-      "-DBRIDGE_SCRIPT=${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/install_bridge.py"
-      -P "${CMAKE_CURRENT_LIST_DIR}/../cmake/scripts/apply-smplh-bridge.cmake"
-    DEPENDEES patch
-    DEPENDERS configure
-    DEPENDS
-      "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/install_bridge.py"
-      "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/NativeSmplhPlayback.h"
-      "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/SmplhDistanceWorker.h"
-      "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/SmplhContactForces.h"
-  )
-endif()

@@ -16,7 +16,7 @@ page explains how the pieces fit together and what the QP actually enforces.
 AMASS motion + SMPL-H model
           │  offline preparation
           ▼
-  local playback cache ──► patched mc_mujoco / MuJoCo
+  local playback cache ──► GilMM27/mc_mujoco / MuJoCo
                                   │  human and robot geometry, sampled velocities
                                   ▼
                            distance worker
@@ -44,21 +44,20 @@ on every tick.
 | --- | --- | --- |
 | Superbuild | CMake project graph that fetches, builds, and installs `mc_rtc`, Tasks, RBDyn, geometry libraries, and optional integrations. Its presets choose source, build, and install locations. | [`CMakeLists.txt`](../CMakeLists.txt), [`mc_rtc.cmake`](../mc_rtc.cmake), [`cmake/`](../cmake/), [`CMakePresets.json`](../CMakePresets.json) |
 | Robot selection | `WITH_<robot>` options add robot packages. `WITH_Kinova` adds ROS 2 Kortex, the Kinova `mc_rtc` robot module, and the hardware interface; it requires ROS 2 support. | [`robots/`](../robots/), especially [`Kinova.cmake`](../robots/Kinova.cmake) |
-| Extensions | Adds `mc_mujoco`, the Kinova Menagerie model and table scene, plus joystick and external-force packages. `WITH_SMPLH_PLAYBACK` patches the separately checked out `mc_mujoco` source during its build. | [`extensions/`](../extensions/) |
+| Extensions | Adds the owned `mc_mujoco` fork, the Kinova Menagerie model and table scene, plus joystick and external-force packages. | [`extensions/`](../extensions/) |
 | Kinova hold controller | Targets a fixed default posture for the seven movable Kinova joints. Useful as a stationary simulation and playback check. | [`KinovaHoldController.cpp`](../kinova_controllers/src/KinovaHoldController.cpp) |
 | Kinova sweep controller | Creates a smooth `joint_1` back-and-forth posture target, Start/Stop GUI controls, safety-row assembly, QP recovery, and diagnostics. With SSM+PFL disabled, it is a repeatable motion baseline. | [`KinovaSweepController.cpp`](../kinova_controllers/src/KinovaSweepController.cpp), [`KinovaSweepController.h`](../kinova_controllers/src/KinovaSweepController.h) |
 | Kinova position SSM+PFL controller | Drives a GUI tool-position target with SSM+PFL speed rows. Built from its own repository through the superbuild extension. | [Controller repository](https://github.com/GilMM27/kinova_position_SSM_PFL_controller), [`kinova_position_SSM_PFL_controller.cmake`](../extensions/kinova_position_SSM_PFL_controller.cmake) |
 | Human cache preparation | Converts licensed AMASS poses and an SMPL-H model into per-frame surface vertices, joint poses, region labels, MJCF, and a compact native cache. Source data and generated caches stay local under `datasets/`. | [`prepare.py`](../smplh_playback/prepare.py), [`native_cache.py`](../smplh_playback/native_cache.py), [`convert_cache.py`](../smplh_playback/convert_cache.py) |
-| Native playback bridge | Reads the cache, poses the kinematic human in MuJoCo, updates the visible surface, requests distance queries, and publishes results to the controller datastore. The installation script applies this bridge to the external `mc_mujoco` checkout. | [`NativeSmplhPlayback.h`](../smplh_playback/NativeSmplhPlayback.h), [`install_bridge.py`](../smplh_playback/install_bridge.py) |
-| Distance worker and snapshot | In a background thread, finds the closest human/robot geometry for each region and movable link. The snapshot carries clearance, witness points, selected robot body, point velocities, timing, and validity flags. Its type comes from the shared API package. | [`SmplhDistanceWorker.h`](../smplh_playback/SmplhDistanceWorker.h), [human_robot_distance_api](https://github.com/GilMM27/human_robot_distance_api) |
+| Native playback bridge | Reads the cache, poses the human in MuJoCo, measures contacts, and publishes results to the controller datastore. | [Owned simulator fork](https://github.com/GilMM27/mc_mujoco) |
+| Distance worker and snapshot | In a background thread, finds the closest human/robot geometry for each region and movable link. The snapshot carries clearance, witness points, selected robot body, point velocities, timing, and validity flags. Its type comes from the shared API package. | [Owned simulator fork](https://github.com/GilMM27/mc_mujoco), [human_robot_distance_api](https://github.com/GilMM27/human_robot_distance_api) |
 | Safety math and QP rows | Converts each measured pair into a directional speed limit and a linear acceleration inequality. Fixed row storage lets the QP retain the same shape as closest geometry changes. | [`SSMPFLMath.h`](../kinova_controllers/src/SSMPFLMath.h), [`SSMPFLConstraint.h`](../kinova_controllers/src/SSMPFLConstraint.h) |
 | Optional relaxation | Solves an auxiliary QP for the smallest weighted *per-pair* allowances under model acceleration bounds, then passes those allowances to the full controller QP. An opt-in full-feasibility mode can search for further shared allowance. | [`SSMPFLRelaxation.h`](../kinova_controllers/src/SSMPFLRelaxation.h), sweep controller `run()` |
 | Analysis and validation | Synthetic fixtures, distance benchmarks, log analysis, and focused C++/Python checks of geometry, cache, and QP algebra. | [`smplh_playback/analyze_ssm_pfl.py`](../smplh_playback/analyze_ssm_pfl.py), [`benchmarks/`](../benchmarks/), [`tests/`](../tests/) |
 | Development setup and examples | Bootstrap scripts install build prerequisites; the devcontainer supplies a repeatable development environment. Example YAML files show controller and MuJoCo configurations for smoke tests and slowdown experiments. | [`utils/`](../utils/), [`.devcontainer/`](../.devcontainer/), [`smplh_playback/`](../smplh_playback/) |
 
-The older [`SmplhBridge.h`](../smplh_playback/SmplhBridge.h) contains a
-separate bridge implementation; the opt-in build copies
-`NativeSmplhPlayback.h` into `mc_mujoco` as `SmplhBridge.h`.
+The simulator bridge and plotting changes are committed in owned forks. The
+superbuild fetches those revisions without modifying their source at install.
 
 ### Human geometry and measurements
 

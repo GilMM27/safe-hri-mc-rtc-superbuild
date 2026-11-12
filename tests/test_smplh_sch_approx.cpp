@@ -1,4 +1,4 @@
-#include "../smplh_playback/SmplhDistanceWorker.h"
+#include "SmplhDistanceWorker.h"
 
 #include <chrono>
 #include <cmath>
@@ -31,7 +31,7 @@ int main()
     setenv("SMPLH_SCH_PATCH_FACES", patchFaces, 1);
     mc_mujoco::SmplhDistanceWorker worker;
     worker.configure(model, {{0, 1}}, {"roof"}, faces);
-    worker.submit(1, 1, 0, vertices, 4, data, model, 0);
+    worker.submit(1, 1, 0, vertices, 4, nullptr, 1.0, true, data, model, 0);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     human_robot_distance::Snapshot result;
     do
