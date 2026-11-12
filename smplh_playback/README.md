@@ -182,6 +182,9 @@ force snapshot. The PositionTask controller does not register these force logs.
 The selected-point torque estimate projects the constraint torque onto the
 controller's closest robot point and normal. Other contacts and forces can
 contribute to the joint torque, so this remains a diagnostic.
+`SMPLH_external_joint_torque_norm_Nm` is also logged as a separate joint-space
+diagnostic; external-torque feedback and high-pass compensation states are
+logged independently.
 
 In `mc_log_ui`, open the current `mc-control-KinovaPositionSSMPFLController`
 log and plot `SMPLH_selected_point_torque_force_N`,
