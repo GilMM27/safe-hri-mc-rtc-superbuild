@@ -179,27 +179,17 @@ including steps between controller ticks, and resets when simulation time rewind
 `SMPLH_force_sample_available` identifies runs where the bridge has published a
 force snapshot. The PositionTask controller does not register these force logs.
 
-`SMPLH_external_joint_torque_norm_Nm` is a separate joint-space diagnostic;
-the log also records external-torque feedback and high-pass compensation states.
-The owned [Bastien-based simulator fork](https://github.com/GilMM27/mc_mujoco)
-also estimates normal force from its external joint-torque source. It subtracts
-the passive term from `qfrc_constraint + qfrc_passive`, then fits one
-nonnegative normal force to the solved contact Jacobian row over actuated robot
-joints. The estimate is available only when exactly one solved robot contact is
-with SMPL-H, the Jacobian has usable magnitude, and the relative joint-torque
-fit residual is at most 0.5. Other contacts and forces can contaminate the
-torque source; this estimate is a diagnostic, not an independent force sensor.
+The selected-point torque estimate projects the constraint torque onto the
+controller's closest robot point and normal. Other contacts and forces can
+contribute to the joint torque, so this remains a diagnostic.
 
 In `mc_log_ui`, open the current `mc-control-KinovaPositionSSMPFLController`
-log and plot `SMPLH_<region>_positive_normal_sum_N` alongside
-`SMPLH_<region>_torque_estimated_normal_N`. Plot
-`SMPLH_<region>_torque_minus_contact_normal_N` to see their signed difference.
-`SMPLH_<region>_torque_estimate_valid` identifies comparable samples;
-unavailable estimates and differences are logged as NaN so they appear as gaps.
-`SMPLH_torque_estimate_residual_Nm` and
-`SMPLH_torque_estimate_relative_residual` diagnose rejected fits. The old
-`SMPLH_<region>_ForceMaxN` and exceedance fields still compare against the
-solved `mj_contactForce` regional sum, not the torque estimate.
+log and plot `SMPLH_selected_point_torque_force_N`,
+`SMPLH_selected_point_mujoco_force_N`, and
+`SMPLH_selected_point_ForceMaxN`. Use
+`SMPLH_selected_point_force_valid` to identify samples with a matching solved
+contact. `SMPLH_<region>_ForceMaxN` and exceedance fields compare against the
+solved `mj_contactForce` regional sum.
 
 For baseline force experiments, leave external-torque feedback and high-pass
 compensation disabled in mc_mujoco. These simulated forces are not calibrated

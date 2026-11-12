@@ -46,14 +46,6 @@ class ContactTests(unittest.TestCase):
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_TEST_CONTACT_CONFIG='1'), check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_CONTACT_MODE='kinematic'), check=True)
             subprocess.run([binary, str(scene), 'impact'], env=env, check=True)
-            for elliptic in (False, True):
-                for sparse in (False, True):
-                    estimate_env = dict(env)
-                    if elliptic:
-                        estimate_env['SMPLH_TEST_ELLIPTIC'] = '1'
-                    if sparse:
-                        estimate_env['SMPLH_TEST_SPARSE'] = '1'
-                    subprocess.run([binary, str(scene), 'estimate'], env=estimate_env, check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_CONTACT_MODE='off'), check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_FREEZE_FRAME='1'), check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_LOOP='1'), check=True)
