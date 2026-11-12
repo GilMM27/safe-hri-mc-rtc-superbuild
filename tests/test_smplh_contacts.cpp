@@ -205,7 +205,7 @@ int main(int argc, char ** argv)
     selection.valid = true;
     selection.time = d->time;
     selection.region = 0;
-    selection.robotBody = "kinova_probe";
+    selection.robotBody = "probe";
     int selectedContact = -1;
     for(int i = 0; i < d->ncon; ++i)
     {
