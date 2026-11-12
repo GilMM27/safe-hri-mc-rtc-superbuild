@@ -151,18 +151,44 @@ bridge and a prepared cache.
 
 ## Physical human contacts
 
-Newly prepared caches contain collision capsules fitted to 14 body regions.
-By default, `SMPLH_CONTACT_MODE=kinematic` makes the capsules follow the recorded
-motion without yielding. They contact collision-enabled Kinova geoms, and the
-simulator adjusts robot position targets to help prevent overlap. The visible
-SMPL-H surface and distance queries are separate from these collision shapes.
-MuJoCo's compliant solver can report simulated contact forces while allowing
-some geometric penetration. These are not calibrated physical measurements:
-the moving human capsules are mocap bodies, whose motion does not enter the
-solver as body velocity, so impact forces in particular can be underestimated.
+Newly prepared caches contain 14 fitted dynamic capsules, each connected by a
+MuJoCo weld to a mocap target following the recorded pose. This is the default
+`SMPLH_CONTACT_MODE=dynamic`. The weld uses `solref=".01 1"` and
+`solimp=".95 .99 .001"`; capsule density is `1000 kg/m³`, contact friction is
+`1 .005 .0001`, and contact `solref`/`solimp` are `.02 1`/`.9 .95 .001`.
+The controller also projects
+position servo targets away from contact. The visible surface and distance
+queries remain separate from these collision shapes. Regenerate older caches
+with `smplh_playback.prepare`; the bridge does not rewrite them.
 
-Set `SMPLH_CONTACT_MODE=off` for visual-only playback. To inspect the capsules,
+`SMPLH_CONTACT_MODE=kinematic` uses duplicate mocap collision capsules, and
+`SMPLH_CONTACT_MODE=off` disables human contacts. To inspect the capsules,
 set `SMPLH_CONTACT_DEBUG=1` or enable geom group 4 in the MuJoCo viewer.
+
+The bridge calls `mj_contactForce` immediately after each `mj_step`, before
+`mj_forward` can replace the contact solution. Set `SMPLH_CONTACT_CSV` to a
+writable path for one CSV row per solved contact, with simulation time, contact
+index, region, robot geom, nonnegative normal force in newtons, and penetration
+depth in metres. With `KinovaPositionSSMPFLController` active, the mc_rtc log has each region's
+`SMPLH_<region>_positive_normal_sum_N`, `positive_normal_peak_N`, `ForceMaxN`,
+`exceeded`, and `peak_exceeded` fields. The sum adds the positive normal component of every
+contact involving that region. A sample exceeds its configured `ForceMaxN` only
+when the sum is greater than the limit. Both transient and quasi-static contacts
+use the same limit in this first model. The peak captures every physics step,
+including steps between controller ticks, and resets when simulation time rewinds.
+`SMPLH_force_sample_available` identifies runs where the bridge has published a
+force snapshot. The PositionTask controller does not register these force logs.
+
+`SMPLH_external_joint_torque_norm_Nm` is a separate joint-space diagnostic;
+the log also records external-torque feedback and high-pass compensation states.
+For baseline force experiments, leave the mc_mujoco high-pass compensation
+disabled. These simulated forces are not calibrated physical measurements.
+Check timestep and solver sensitivity, and compare matched static loads and
+impacts against calibrated force and pressure measurements before making an ISO
+compliance claim. [ISO/PAS 5672:2023](https://www.iso.org/standard/82488.html)
+covers physical force and pressure measurement methods; pressure is outside
+this first implementation. The example `ForceMaxN` values are simulation
+placeholders, not limits established for a particular application.
 
 ### Size contact shapes by region
 

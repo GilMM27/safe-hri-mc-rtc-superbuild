@@ -107,6 +107,20 @@ def install(source):
     c=cache_model_override(cpp.read_text()); h=header.read_text()
     c=c.replace("smplh_bridge_.contactStats(model, data, smplh_contacts, smplh_penetration)",
                 "smplh_bridge_.latestContactStats(smplh_contacts, smplh_penetration)")
+    def add_force_store(text):
+        for variable, indent in [('smplh_store', '    '), ('smplh_paused_store', '      ')]:
+            marker = indent + variable + '.assign<human_robot_distance::Snapshot>(human_robot_distance::datastoreKey, smplh_bridge_.snapshot());\n'
+            addition = (indent + f'if(!{variable}.has(smplh_contact::datastoreKey)) {variable}.make<smplh_contact::Snapshot>(smplh_contact::datastoreKey);\n'
+                        + indent + 'auto smplh_forces = smplh_bridge_.contactForces();\n'
+                        + indent + 'if(!robots.empty())\n' + indent + '{\n'
+                        + indent + '  smplh_forces.externalTorqueFeedback = robots.front().use_external_torques;\n'
+                        + indent + '  smplh_forces.highPassCompensation = robots.front().use_hp_filter_ext_torques && robots.front().hp_filter_ext_torques_gain < 0;\n'
+                        + indent + '  smplh_forces.externalJointTorqueNormNm = robots.front().tau_ext.norm();\n'
+                        + indent + '}\n'
+                        + indent + f'{variable}.assign<smplh_contact::Snapshot>(smplh_contact::datastoreKey, smplh_forces);\n')
+            if marker in text and addition not in text:
+                text = text.replace(marker, marker + addition, 1)
+        return text
     if BRIDGE_MARKER in c:
         if 'smplh_bridge_.configureContactSizes(controller->controller().config());' not in c:
             marker = '  smplh_bridge_.update(model, data);'
@@ -132,8 +146,9 @@ def install(source):
         if 'smplh_bridge_.guardPositionControls(model, data);' not in c:
             c = c.replace('  smplh_bridge_.beforeStep(model, data);\n  mj_step(model, data);',
                           '  smplh_bridge_.beforeStep(model, data);\n  smplh_bridge_.guardPositionControls(model, data);\n  mj_step(model, data);')
-        cpp.write_text(c)
+        cpp.write_text(add_force_store(c))
         shutil.copyfile(here/'SmplhDistanceWorker.h', source/'src/SmplhDistanceWorker.h')
+        shutil.copyfile(here/'SmplhContactForces.h', source/'src/SmplhContactForces.h')
         shutil.copyfile(here/'NativeSmplhPlayback.h', source/'src/SmplhBridge.h')
         return
     if 'smplh_bridge_.update' in c:
@@ -188,9 +203,10 @@ def install(source):
                   '    smplh_bridge_.latestContactStats(smplh_contacts, smplh_penetration);\n'
                   '    ImGui::Text("SMPL-H contacts: %d | deepest %.1f mm", smplh_contacts, 1000.0 * smplh_penetration);\n'
                   '    const auto smplh_distance = smplh_bridge_.snapshot();')
-    cpp.write_text(BRIDGE_MARKER + timing_readout(c)); header.write_text(h)
+    cpp.write_text(BRIDGE_MARKER + timing_readout(add_force_store(c))); header.write_text(h)
     shutil.copyfile(here/'NativeSmplhPlayback.h',source/'src/SmplhBridge.h')
     shutil.copyfile(here/'SmplhDistanceWorker.h',source/'src/SmplhDistanceWorker.h')
+    shutil.copyfile(here/'SmplhContactForces.h',source/'src/SmplhContactForces.h')
     cmake=source/'src/CMakeLists.txt'
     text=cmake.read_text()
     if '    SmplhDistanceWorker.h\n' not in text:

@@ -53,13 +53,13 @@ class PipelineTests(unittest.TestCase):
     def test_load_and_frame_zero(self):
         import mujoco
         model=mujoco.MjModel.from_xml_path(str(self.cache/'human.xml'))
-        data=mujoco.MjData(model); data.qpos[:]=self.qpos[0]
+        data=mujoco.MjData(model); data.qpos[:211]=self.qpos[0]
         mujoco.mj_forward(model,data)
         joints=np.load(self.cache/'joints.npy')
         for i in range(52):
             bid=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_BODY,f'smplh_body_{i}')
             np.testing.assert_allclose(data.xpos[bid],joints[0,i],atol=1e-6)
-        self.assertEqual(model.nq,211)
+        self.assertEqual(model.nq,211 + 14*7)
         np.testing.assert_allclose(self.vertices[0][::4],self.rest,atol=1e-6)
         mid=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_MESH,'smplh_surface')
         self.assertEqual(model.mesh_vertnum[mid],len(self.vertices[0]))
@@ -70,7 +70,7 @@ class PipelineTests(unittest.TestCase):
         model=mujoco.MjModel.from_xml_path(str(self.cache/'human.xml')); data=mujoco.MjData(model)
         joints=np.load(self.cache/'joints.npy')
         for frame in range(3):
-            data.qpos[:]=self.qpos[frame]; mujoco.mj_forward(model,data)
+            data.qpos[:211]=self.qpos[frame]; mujoco.mj_forward(model,data)
             for i in range(52):
                 bid=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_BODY,f'smplh_body_{i}')
                 np.testing.assert_allclose(data.xpos[bid],joints[frame,i],atol=1e-6)
@@ -92,10 +92,14 @@ class PipelineTests(unittest.TestCase):
             mujoco.mj_forward(model,data)
             for name,index,_ in SEGMENTS:
                 skeleton=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_BODY,f'smplh_body_{index}')
-                contact=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_BODY,f'smplh_contact_{index}')
+                contact=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_BODY,f'smplh_contact_target_{index}')
                 mocap=model.body_mocapid[contact]
                 data.mocap_pos[mocap]=data.xpos[skeleton]
                 data.mocap_quat[mocap]=data.xquat[skeleton]
+                free=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_JOINT,f'smplh_contact_free_{index}')
+                q=model.jnt_qposadr[free]
+                data.qpos[q:q+3]=data.mocap_pos[mocap]
+                data.qpos[q+3:q+7]=data.mocap_quat[mocap]
             mujoco.mj_forward(model,data)
             for name,index,_ in SEGMENTS:
                 geom=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_GEOM,f'smplh_contact_geom_{index}')

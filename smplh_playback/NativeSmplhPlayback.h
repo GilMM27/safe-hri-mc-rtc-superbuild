@@ -1,6 +1,7 @@
 #pragma once
 #include <mujoco/mujoco.h>
 #include "SmplhDistanceWorker.h"
+#include "SmplhContactForces.h"
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -44,22 +45,30 @@ class SmplhBridge
   bool distanceEnabled_ = true;
   bool contactsEnabled_ = true;
   mjData * contactData_ = nullptr;
-  std::vector<std::pair<int, int>> contactBodies_; // mocap id, skeleton body id
+  std::vector<std::pair<int, int>> contactBodies_; // target mocap id, skeleton body id
+  std::vector<int> contactFreeJoints_;
+  std::map<int, size_t> contactRegionByGeom_;
+  bool dynamicContacts_ = true;
+  smplh_contact::Snapshot contactForces_;
+  std::array<double, 14> contactPeaks_{};
+  std::ofstream contactCsv_;
   std::map<std::string, std::array<double, 2>> contactSizeScales_;
   std::map<std::string, std::array<double, 3>> contactOffsetSettings_;
   std::map<int, std::array<double, 3>> contactWorldOffsetsByBody_;
   std::vector<std::array<mjtNum, 7>> previousMocap_;
   bool havePreviousMocap_ = false;
+  bool contactBodiesPlaced_ = false;
   int lastContactCount_ = 0;
   double lastContactDepth_ = 0;
 
   void configureContacts(mjModel * m)
   {
     const char * setting = std::getenv("SMPLH_CONTACT_MODE");
-    const std::string mode = setting ? setting : "kinematic";
-    if(mode != "kinematic" && mode != "off")
-      throw std::runtime_error("SMPLH_CONTACT_MODE must be kinematic or off");
-    contactsEnabled_ = mode == "kinematic";
+    const std::string mode = setting ? setting : "dynamic";
+    if(mode != "dynamic" && mode != "kinematic" && mode != "off")
+      throw std::runtime_error("SMPLH_CONTACT_MODE must be dynamic, kinematic or off");
+    contactsEnabled_ = mode != "off";
+    dynamicContacts_ = mode == "dynamic";
     if(!contactsEnabled_) return;
     // Reserve a bit unused anywhere in this scene, retaining existing robot contacts.
     int used = 0;
@@ -70,23 +79,28 @@ class SmplhBridge
     std::vector<int> geoms;
     try
     {
+      size_t region = 0;
       for(int joint : {0, 15, 16, 18, 20, 17, 19, 21, 1, 4, 7, 2, 5, 8})
       {
-        int geom = find(m, mjOBJ_GEOM, "smplh_contact_geom_" + std::to_string(joint));
-        int body = m->geom_bodyid[geom];
-        int mocap = m->body_mocapid[body];
-        if(mocap < 0) throw std::runtime_error("Contact proxy is not a mocap body");
+        const auto suffix = std::to_string(joint);
+        int geom = find(m, mjOBJ_GEOM, (dynamicContacts_ ? "smplh_contact_geom_" : "smplh_contact_kinematic_geom_") + suffix);
+        int target = find(m, mjOBJ_GEOM, "smplh_contact_kinematic_geom_" + suffix);
+        int mocap = m->body_mocapid[m->geom_bodyid[target]];
+        if(mocap < 0) throw std::runtime_error("Contact target is not a mocap body");
+        int freeJoint = find(m, mjOBJ_JOINT, "smplh_contact_free_" + suffix);
+        if(m->jnt_type[freeJoint] != mjJNT_FREE) throw std::runtime_error("Contact body needs a free joint");
         if(m->geom_type[geom] != mjGEOM_CAPSULE)
-          throw std::runtime_error("Contact proxy is not a capsule: run smplh_playback.refit_contacts on this cache");
+          throw std::runtime_error("Contact proxy is not a capsule");
         contactBodies_.emplace_back(mocap, m->jnt_bodyid[joints_[joint]]);
+        contactFreeJoints_.push_back(freeJoint);
+        contactRegionByGeom_[geom] = region++;
         geoms.push_back(geom);
       }
     }
     catch(const std::exception & e)
     {
       throw std::runtime_error(std::string("SMPL-H contact proxies missing or invalid: ") + e.what()
-                               + "; regenerate the cache with smplh_playback.prepare, refit it with "
-                                 "smplh_playback.refit_contacts, or set SMPLH_CONTACT_MODE=off");
+                               + "; regenerate the cache with smplh_playback.prepare or set SMPLH_CONTACT_MODE=off");
     }
     const std::map<std::string, int> regionJoints = {
       {"torso", 0}, {"head", 15},
@@ -98,19 +112,21 @@ class SmplhBridge
       contactWorldOffsetsByBody_[m->jnt_bodyid[joints_[regionJoints.at(name)]]] = offset;
     for(const auto & [name, scales] : contactSizeScales_)
     {
-      int geom = find(m, mjOBJ_GEOM, "smplh_contact_geom_" + std::to_string(regionJoints.at(name)));
-      if(m->geom_type[geom] != mjGEOM_CAPSULE)
-        throw std::runtime_error("SMPL-H contact region " + name + " is not a capsule; refit the cache");
-      m->geom_size[3 * geom] *= scales[0];
-      m->geom_size[3 * geom + 1] *= scales[1];
-      // Broad-phase collision detection uses these compiled bounds separately
-      // from geom_size. Recompute them when a controller enlarges a proxy.
-      const mjtNum * size = m->geom_size + 3 * geom;
-      mjtNum * bounds = m->geom_aabb + 6 * geom;
-      bounds[3] = size[0];
-      bounds[4] = size[0];
-      bounds[5] = size[0] + size[1];
-      m->geom_rbound[geom] = size[0] + size[1];
+      for(const auto & stem : {"smplh_contact_geom_", "smplh_contact_kinematic_geom_"})
+      {
+        int geom = find(m, mjOBJ_GEOM, std::string(stem) + std::to_string(regionJoints.at(name)));
+        if(m->geom_type[geom] != mjGEOM_CAPSULE) throw std::runtime_error("SMPL-H contact region " + name + " is not a capsule");
+        m->geom_size[3 * geom] *= scales[0];
+        m->geom_size[3 * geom + 1] *= scales[1];
+        // Broad-phase collision detection uses these compiled bounds separately
+        // from geom_size. Recompute them when a controller enlarges a proxy.
+        const mjtNum * size = m->geom_size + 3 * geom;
+        mjtNum * bounds = m->geom_aabb + 6 * geom;
+        bounds[3] = size[0];
+        bounds[4] = size[0];
+        bounds[5] = size[0] + size[1];
+        m->geom_rbound[geom] = size[0] + size[1];
+      }
     }
     const char * prefixSetting = std::getenv("SMPLH_ROBOT_PREFIX");
     const std::string prefix = prefixSetting ? prefixSetting : "kinova_";
@@ -135,6 +151,12 @@ class SmplhBridge
     }
     contactData_ = mj_makeData(m);
     if(!contactData_) throw std::runtime_error("Cannot allocate SMPL-H contact kinematics data");
+    if(const char * path = std::getenv("SMPLH_CONTACT_CSV"))
+    {
+      contactCsv_.open(path);
+      if(!contactCsv_) throw std::runtime_error("Cannot open SMPLH_CONTACT_CSV");
+      contactCsv_ << "time_s,contact_index,region,robot_geom,normal_force_N,depth_m\n";
+    }
   }
 
   static void interpolateQuat(mjtNum * out, const float * a, const float * b, double t)
@@ -322,6 +344,7 @@ public:
   {
     initialize(m, d);
     if(mapping_ == MAP_FAILED || !contactsEnabled_ || !std::isfinite(d->time) || d->time < 0) return;
+    if(d->time < contactForces_.time) { contactBodiesPlaced_ = false; havePreviousMocap_ = false; }
     double sample = d->time * fps_;
     if(freezeFrame_ >= 0) sample = freezeFrame_;
     else if(loop_) sample = std::fmod(sample, static_cast<double>(frameCount_));
@@ -355,6 +378,16 @@ public:
       if(const auto offset = contactWorldOffsetsByBody_.find(body.second); offset != contactWorldOffsetsByBody_.end())
         mju_addTo3(d->mocap_pos + 3*body.first, offset->second.data());
       mju_copy4(d->mocap_quat + 4*body.first, contactData_->xquat + 4*body.second);
+    }
+    if(!contactBodiesPlaced_)
+    {
+      for(size_t i = 0; i < contactBodies_.size(); ++i)
+      {
+        const int q = m->jnt_qposadr[contactFreeJoints_[i]];
+        mju_copy3(d->qpos + q, d->mocap_pos + 3*contactBodies_[i].first);
+        mju_copy4(d->qpos + q + 3, d->mocap_quat + 4*contactBodies_[i].first);
+      }
+      contactBodiesPlaced_ = true;
     }
   }
   // Project position-servo targets onto the non-penetrating contact halfspaces.
@@ -391,8 +424,7 @@ public:
         int humanSide = -1;
         for(int side = 0; side < 2; ++side)
         {
-          const char * name = mj_id2name(m, mjOBJ_GEOM, contact.geom[side]);
-          if(name && std::string(name).find("smplh_contact_geom_") != std::string::npos)
+          if(contactRegionByGeom_.count(contact.geom[side]))
             humanSide = side;
         }
         if(humanSide < 0) continue;
@@ -415,8 +447,7 @@ public:
           norm2 += row[i]*row[i];
         }
         mjtNum required = 0;
-        const int humanBody = m->geom_bodyid[contact.geom[humanSide]];
-        const int mocap = m->body_mocapid[humanBody];
+        const int mocap = contactBodies_[contactRegionByGeom_.at(contact.geom[humanSide])].first;
         if(havePreviousMocap_ && mocap >= 0)
         {
           const auto & previous = previousMocap_[mocap];
@@ -453,7 +484,30 @@ public:
   void captureContactStats(const mjModel * m, const mjData * d)
   {
     contactStats(m, d, lastContactCount_, lastContactDepth_);
+    if(d->time < contactForces_.time) contactPeaks_.fill(0);
+    contactForces_ = {};
+    contactForces_.valid = mapping_ != MAP_FAILED && contactsEnabled_;
+    contactForces_.time = d->time;
+    for(int i = 0; i < d->ncon; ++i)
+    {
+      const auto & c = d->contact[i];
+      int humanSide = contactRegionByGeom_.count(c.geom[0]) ? 0 : contactRegionByGeom_.count(c.geom[1]) ? 1 : -1;
+      if(humanSide < 0 || c.efc_address < 0) continue;
+      const size_t region = contactRegionByGeom_.at(c.geom[humanSide]);
+      mjtNum wrench[6] = {};
+      mj_contactForce(m, d, i, wrench);
+      const double normal = std::max(0.0, static_cast<double>(wrench[0]));
+      contactForces_.positiveNormalSumN[region] += normal;
+      const char * robot = mj_id2name(m, mjOBJ_GEOM, c.geom[1-humanSide]);
+      if(contactCsv_) contactCsv_ << d->time << ',' << i << ',' << smplh_contact::regions[region]
+                                  << ',' << (robot ? robot : "") << ',' << normal << ','
+                                  << std::max(0.0, -static_cast<double>(c.dist)) << '\n';
+    }
+    for(size_t i = 0; i < contactPeaks_.size(); ++i)
+      contactPeaks_[i] = std::max(contactPeaks_[i], contactForces_.positiveNormalSumN[i]);
+    contactForces_.peakPositiveNormalSumN = contactPeaks_;
   }
+  smplh_contact::Snapshot contactForces() const { return contactForces_; }
   void latestContactStats(int & count, double & deepest) const
   {
     count = lastContactCount_;
@@ -471,8 +525,7 @@ public:
       bool human = false;
       for(int side = 0; side < 2; ++side)
       {
-        const char * name = mj_id2name(m, mjOBJ_GEOM, contact.geom[side]);
-        if(name && std::string(name).find("smplh_contact_geom_") != std::string::npos) human = true;
+        if(contactRegionByGeom_.count(contact.geom[side])) human = true;
       }
       if(human)
       {

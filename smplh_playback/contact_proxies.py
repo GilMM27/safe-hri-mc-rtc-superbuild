@@ -19,7 +19,7 @@ def capsule_axis(points):
     return axis
 
 
-def add_contact_proxies(world, vertices, joints, weights, definitions):
+def add_contact_proxies(world, vertices, joints, weights, definitions, root):
     """Fit in the unposed, shaped SMPL frame, whose joint axes are identity."""
     scores = np.stack([weights[:, ids].sum(axis=1) for ids in definitions.values()], axis=1)
     labels = scores.argmax(axis=1)
@@ -29,9 +29,12 @@ def add_contact_proxies(world, vertices, joints, weights, definitions):
         points = vertices[labels == names.index(name)] - joints[joint]
         if not len(points):
             raise ValueError(f'Cannot fit contact proxy for {name}: no skin vertices')
-        body = ET.SubElement(world, 'body', name=f'smplh_contact_{joint}', mocap='true')
+        target = ET.SubElement(world, 'body', name=f'smplh_contact_target_{joint}', mocap='true')
+        body = ET.SubElement(world, 'body', name=f'smplh_contact_{joint}')
+        ET.SubElement(body, 'freejoint', name=f'smplh_contact_free_{joint}')
         attrs = dict(name=f'smplh_contact_geom_{joint}', contype='0', conaffinity='0',
-                     group='4', rgba='.9 .4 .1 .35')
+                     group='4', rgba='.9 .4 .1 .35', density='1000',
+                     friction='1 .005 .0001', solref='.02 1', solimp='.9 .95 .001')
         axis = joints[end] - joints[joint] if end is not None else capsule_axis(points)
         length = np.linalg.norm(axis)
         if length < 1e-10:
@@ -42,3 +45,9 @@ def add_contact_proxies(world, vertices, joints, weights, definitions):
         radius = max(.015, float(np.linalg.norm(points - along[:, None] * axis, axis=1).max()))
         attrs.update(type='capsule', size=str(radius), fromto=' '.join(map(str, np.r_[start, stop])))
         ET.SubElement(body, 'geom', **attrs)
+        ET.SubElement(target, 'geom', **dict(attrs, name=f'smplh_contact_kinematic_geom_{joint}'))
+    equality = ET.SubElement(root, 'equality')
+    for _, joint, _ in SEGMENTS:
+        ET.SubElement(equality, 'weld', name=f'smplh_contact_weld_{joint}',
+                      body1=f'smplh_contact_target_{joint}', body2=f'smplh_contact_{joint}',
+                      solref='.01 1', solimp='.95 .99 .001')

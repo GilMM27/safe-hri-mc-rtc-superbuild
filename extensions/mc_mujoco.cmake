@@ -57,5 +57,6 @@ if(WITH_SMPLH_PLAYBACK)
       "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/install_bridge.py"
       "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/NativeSmplhPlayback.h"
       "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/SmplhDistanceWorker.h"
+      "${CMAKE_CURRENT_LIST_DIR}/../smplh_playback/SmplhContactForces.h"
   )
 endif()

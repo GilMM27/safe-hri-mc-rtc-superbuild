@@ -67,8 +67,9 @@ skinning weights. The worker compares each region with the robot geometry on
 each of seven movable Kinova links: **14 × 7 = 98 pairs**. For each pair it
 keeps the closest robot geometry and its two closest points ("witnesses"). The
 fixed base is excluded. The visible SMPL-H mesh and simplified skeleton are non-colliding. Separate
-subject-fitted mocap proxies create physical contacts with Kinova by default;
-`SMPLH_CONTACT_MODE=off` disables them. Their interpolated poses are updated
+subject-fitted dynamic capsules welded to mocap targets create physical contacts
+with Kinova by default; `SMPLH_CONTACT_MODE=kinematic` uses mocap collision
+capsules and `SMPLH_CONTACT_MODE=off` disables them. Their target poses are updated
 before every physics step, independently of the discrete surface-distance frames.
 
 The default `sch_approx` distance mode uses convex patches and reports an
