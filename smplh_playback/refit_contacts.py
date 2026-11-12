@@ -76,6 +76,12 @@ def refit(cache):
             geom.set('type', 'capsule')
             geom.set('fromto', ' '.join(map(str, np.r_[start_point, end_point])))
             geom.set('size', str(radius + .005))
+            kinematic = bodies.find(f'./body[@name="smplh_contact_target_{joint}"]/geom')
+            if kinematic is None:
+                raise ValueError('Dynamic contact targets missing; regenerate the cache')
+            kinematic.set('type', 'capsule')
+            kinematic.set('fromto', geom.get('fromto'))
+            kinematic.set('size', geom.get('size'))
     tree.write(xml)
 
 

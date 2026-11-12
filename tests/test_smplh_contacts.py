@@ -8,24 +8,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from smplh_playback.install_bridge import BRIDGE_MARKER, install
 from smplh_playback.native_cache import write_native_cache
-
-
-class BridgeUpgradeTests(unittest.TestCase):
-    def test_upgrade_installed_bridge_is_idempotent(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp)
-            (source / 'src').mkdir()
-            cpp = source / 'src/mj_sim.cpp'
-            cpp.write_text(BRIDGE_MARKER + '// SMPLH_CACHE model\n  smplh_bridge_.update(model, data);\n  mj_step(model, data);\n    const auto smplh_distance = smplh_bridge_.snapshot();\n')
-            (source / 'src/mj_sim_impl.h').write_text('already installed')
-            install(source)
-            first = cpp.read_text()
-            install(source)
-            self.assertEqual(first, cpp.read_text())
-            self.assertIn('smplh_bridge_.beforeStep(model, data);\n  smplh_bridge_.guardPositionControls(model, data);\n  mj_step(model, data);\n  smplh_bridge_.captureContactStats(model, data);', first)
-            self.assertIn('smplh_bridge_.configureContactSizes(controller->controller().config());\n  smplh_bridge_.update(model, data);', first)
 
 
 @unittest.skipUnless(os.getenv('SMPLH_CONTACT_TEST_BINARY'), 'Set SMPLH_CONTACT_TEST_BINARY to run native contacts')
@@ -55,14 +38,20 @@ class ContactTests(unittest.TestCase):
             for key in ('SMPLH_CONTACT_MODE', 'SMPLH_FREEZE_FRAME', 'SMPLH_LOOP'):
                 env.pop(key, None)
             binary = env['SMPLH_CONTACT_TEST_BINARY']
-            subprocess.run([binary, str(scene)], env=env, check=True)
+            csv = cache / 'contacts.csv'
+            subprocess.run([binary, str(scene)], env=dict(env, SMPLH_CONTACT_CSV=str(csv)), check=True)
+            rows = csv.read_text().splitlines()
+            self.assertEqual(rows[0], 'time_s,contact_index,region,robot_geom,normal_force_N,depth_m')
+            self.assertGreater(len(rows), 1)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_TEST_CONTACT_CONFIG='1'), check=True)
+            subprocess.run([binary, str(scene)], env=dict(env, SMPLH_CONTACT_MODE='kinematic'), check=True)
+            subprocess.run([binary, str(scene), 'impact'], env=env, check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_CONTACT_MODE='off'), check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_FREEZE_FRAME='1'), check=True)
             subprocess.run([binary, str(scene)], env=dict(env, SMPLH_LOOP='1'), check=True)
             result = subprocess.run([binary, str(scene)], env=dict(env, SMPLH_CONTACT_MODE='invalid'), capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('must be kinematic or off', result.stderr)
+            self.assertIn('must be dynamic, kinematic or off', result.stderr)
             for fps in (15, 60):
                 metadata = json.loads((cache / 'metadata.json').read_text())
                 metadata['fps'] = fps
@@ -95,6 +84,7 @@ class ContactTests(unittest.TestCase):
             for body in list(world.findall('body')):
                 if body.get('mocap') == 'true':
                     world.remove(body)
+            root.remove(root.find('equality'))
             tree.write(scene)
             result = subprocess.run([binary, str(scene)], env=env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)

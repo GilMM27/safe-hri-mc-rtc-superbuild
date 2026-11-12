@@ -107,7 +107,7 @@ def main():
         ET.SubElement(body,'geom',type='sphere',size='.025',contype='0',conaffinity='0',group='3',rgba='.9 .5 .2 0.3')
         bodies.append(body)
     from .contact_proxies import add_contact_proxies
-    add_contact_proxies(wb, shaped[0].numpy(), rest, model.lbs_weights.numpy(), REGIONS)
+    add_contact_proxies(wb, shaped[0].numpy(), rest, model.lbs_weights.numpy(), REGIONS, root)
     ET.ElementTree(root).write(out/'human.xml')
     (out/'smplh.yaml').write_text('xmlModelPath: '+json.dumps(str((out/'human.xml').resolve()))+'\n')
     from .native_cache import write_native_cache

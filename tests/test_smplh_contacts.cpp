@@ -1,4 +1,4 @@
-#include "../smplh_playback/NativeSmplhPlayback.h"
+#include "SmplhBridge.h"
 #include <mc_rtc/Configuration.h>
 #include <iostream>
 #include <tuple>
@@ -12,6 +12,60 @@ void require(bool condition, const char * message)
 int main(int argc, char ** argv)
 {
   if(argc != 2 && argc != 3) return 2;
+  if(argc == 3 && std::string(argv[2]) == "impact")
+  {
+    setenv("SMPLH_DISTANCE_DISABLE", "1", 1);
+    setenv("SMPLH_FREEZE_FRAME", "0", 1);
+    try
+    {
+      for(double timestep : {.0005, .001, .002})
+        for(int iterations : {50, 100})
+        for(double speed : {.25, .5, 1.0, 2.0})
+        {
+          char error[1024] = {};
+          mjModel * model = mj_loadXML(argv[1], nullptr, error, sizeof(error));
+          if(!model) throw std::runtime_error(error);
+          model->opt.timestep = timestep;
+          model->opt.iterations = iterations;
+          mjData * data = mj_makeData(model);
+          double peak = 0;
+          {
+            SmplhBridge bridge;
+            bridge.update(model, data);
+            const int proxy = mj_name2id(model, mjOBJ_GEOM, "smplh_contact_geom_0");
+            for(int geom = 0; geom < model->ngeom; ++geom)
+            {
+              const char * name = mj_id2name(model, mjOBJ_GEOM, geom);
+              if(name && std::string(name).find("smplh_contact_geom_") == 0 && geom != proxy)
+                model->geom_contype[geom] = model->geom_conaffinity[geom] = 0;
+            }
+            const int probe = mj_name2id(model, mjOBJ_JOINT, "probe_root");
+            const int q = model->jnt_qposadr[probe], v = model->jnt_dofadr[probe];
+            for(int axis = 0; axis < 3; ++axis)
+            {
+              const double outward = data->geom_xmat[9*proxy + 3*axis];
+              data->qpos[q+axis] = data->geom_xpos[3*proxy+axis]
+                                   + outward*(model->geom_size[3*proxy] + .04);
+              data->qvel[v+axis] = -outward*speed;
+            }
+            for(int step = 0; step < 400; ++step)
+            {
+              bridge.beforeStep(model, data);
+              mj_step(model, data);
+              bridge.captureContactStats(model, data);
+              const auto sample = bridge.contactForces();
+              for(double value : sample.positiveNormalSumN)
+                peak = std::max(peak, value);
+              bridge.update(model, data);
+            }
+          }
+          mj_deleteData(data); mj_deleteModel(model);
+          require(std::isfinite(peak) && peak > 0, "Impact force was missing at a tested speed or timestep");
+        }
+    }
+    catch(const std::exception & e) { std::cerr << e.what() << '\n'; return 1; }
+    return 0;
+  }
   if(argc == 3 && std::string(argv[2]) == "guard")
   {
     setenv("SMPLH_DISTANCE_DISABLE", "1", 1);
@@ -29,7 +83,8 @@ int main(int argc, char ** argv)
         bridge.update(model, data);
         int joint = mj_name2id(model, mjOBJ_JOINT, "arm");
         int proxy = mj_name2id(model, mjOBJ_GEOM, "smplh_contact_geom_0");
-        int mocap = model->body_mocapid[model->geom_bodyid[proxy]];
+        int target = mj_name2id(model, mjOBJ_BODY, "smplh_contact_target_0");
+        int mocap = model->body_mocapid[target];
         for(int i = 0; i < 2000; ++i)
         {
           bridge.beforeStep(model, data);
@@ -66,7 +121,8 @@ int main(int argc, char ** argv)
   {
     const double fps = std::getenv("SMPLH_TEST_FPS") ? std::atof(std::getenv("SMPLH_TEST_FPS")) : 30;
     const bool configured = std::getenv("SMPLH_TEST_CONTACT_CONFIG");
-    const int headGeom = mj_name2id(m, mjOBJ_GEOM, "smplh_contact_geom_15");
+    const bool kinematic = std::getenv("SMPLH_CONTACT_MODE") && std::string(std::getenv("SMPLH_CONTACT_MODE")) == "kinematic";
+    const int headGeom = mj_name2id(m, mjOBJ_GEOM, kinematic ? "smplh_contact_kinematic_geom_15" : "smplh_contact_geom_15");
     const double headRadius = m->geom_size[3*headGeom];
     const double headHalfLength = m->geom_size[3*headGeom+1];
     SmplhBridge bridge;
@@ -85,7 +141,7 @@ int main(int argc, char ** argv)
       require(std::abs(m->geom_size[3*headGeom] - 5.0*headRadius) < 1e-9
               && std::abs(m->geom_size[3*headGeom+1] - .5*headHalfLength) < 1e-9,
               "Controller YAML did not resize the head capsule");
-      const int headMocap = m->body_mocapid[m->geom_bodyid[headGeom]];
+      const int headMocap = m->body_mocapid[mj_name2id(m, mjOBJ_BODY, "smplh_contact_target_15")];
       const int headJoint = mj_name2id(m, mjOBJ_JOINT, "smplh_joint_15");
       const int headBody = m->jnt_bodyid[headJoint];
       require(std::abs(d->mocap_pos[3*headMocap+2] - d->xpos[3*headBody+2] - .03) < 1e-9,
@@ -111,7 +167,7 @@ int main(int argc, char ** argv)
     if(visual >= 0) require(m->geom_contype[visual] == 0 && m->geom_conaffinity[visual] == 0,
                             "Robot visual geometry was enabled for contacts");
     const bool off = std::getenv("SMPLH_CONTACT_MODE") && std::string(std::getenv("SMPLH_CONTACT_MODE")) == "off";
-    int proxy = mj_name2id(m, mjOBJ_GEOM, "smplh_contact_geom_0");
+    int proxy = mj_name2id(m, mjOBJ_GEOM, kinematic ? "smplh_contact_kinematic_geom_0" : "smplh_contact_geom_0");
     int root = mj_name2id(m, mjOBJ_JOINT, "probe_root");
     const int q = m->jnt_qposadr[root], v = m->jnt_dofadr[root];
     // Place a dynamic robot sphere just inside the side of the torso capsule.
@@ -144,6 +200,71 @@ int main(int argc, char ** argv)
     require(off ? !found && reported == 0 : found && reported > 0 && deepest > 0,
             "Unexpected or missing contact");
     mj_step(m, d);
+    bridge.captureContactStats(m, d);
+    smplh_contact::Selection selection;
+    selection.valid = true;
+    selection.time = d->time;
+    selection.region = 0;
+    selection.robotBody = "probe";
+    int selectedContact = -1;
+    for(int i = 0; i < d->ncon; ++i)
+    {
+      const auto & c = d->contact[i];
+      if(c.efc_address < 0 || (c.geom[0] != proxy && c.geom[1] != proxy)) continue;
+      const int robotSide = c.geom[0] == proxy ? 1 : 0;
+      if(m->geom_bodyid[c.geom[robotSide]] != mj_name2id(m, mjOBJ_BODY, "kinova_probe")) continue;
+      selectedContact = i;
+      for(int axis = 0; axis < 3; ++axis)
+      {
+        selection.position[axis] = c.pos[axis];
+        selection.normal[axis] = (robotSide == 0 ? 1.0 : -1.0) * c.frame[axis];
+      }
+      break;
+    }
+    require(off || selectedContact >= 0, "Could not select the solved torso contact point");
+    if(selectedContact >= 0)
+    {
+      bridge.setContactSelection(selection);
+      bridge.captureSelectedPointComparison(m, d, {v, v+1, v+2, v+3, v+4, v+5}, "kinova_");
+    }
+    const auto force = bridge.contactForces();
+    require(off || force.selectedPointValid, "Selected-point comparison missed the solved contact");
+    if(force.selectedPointValid)
+    {
+      require(force.selectedRegion == 0 && force.selectedPointTime == d->time,
+              "Selected-point comparison metadata does not match the selected contact");
+      require(std::isfinite(force.selectedTorqueForceN) && force.selectedTorqueForceN >= 0
+              && std::isfinite(force.selectedMujocoForceN) && force.selectedMujocoForceN >= 0
+              && std::isfinite(force.selectedForceDifferenceN),
+              "Selected-point comparison returned invalid force values");
+      require(force.selectedMujocoForceN > 0,
+              "Selected-point comparison did not recover the solved normal force");
+    }
+    require(force.valid == !off, "Contact force sample validity does not match contact mode");
+    double torso = 0;
+    for(int i = 0; i < d->ncon; ++i)
+    {
+      const auto & contact = d->contact[i];
+      if(contact.efc_address < 0 || (contact.geom[0] != proxy && contact.geom[1] != proxy)) continue;
+      mjtNum wrench[6] = {};
+      mj_contactForce(m, d, i, wrench);
+      torso += std::max(0.0, static_cast<double>(wrench[0]));
+    }
+    require(std::abs(torso - force.positiveNormalSumN[0]) < 1e-8,
+            "Per-region normal force did not sum contacts");
+    double summed = 0;
+    for(double value : force.positiveNormalSumN)
+    {
+      require(value >= 0 && std::isfinite(value), "Invalid normal force in newtons");
+      summed += value;
+    }
+    if(!off && !kinematic)
+    {
+      require(std::count_if(force.positiveNormalSumN.begin(), force.positiveNormalSumN.end(),
+                            [](double value) { return value > 0; }) > 1,
+              "Synthetic simultaneous contact did not reach multiple regions");
+    }
+    require(off ? summed == 0 : summed > 0, "Missing post-step contact force");
     const double outwardSpeed = outward[0]*d->qvel[v] + outward[1]*d->qvel[v+1] + outward[2]*d->qvel[v+2];
     require(off ? std::abs(outwardSpeed) < 1e-9 : outwardSpeed > 0,
             "Robot did not respond to human contact");
@@ -163,7 +284,7 @@ int main(int argc, char ** argv)
             "Held human skeleton fell below the display mesh");
     if(!off)
     {
-      const int body = m->geom_bodyid[proxy], mocap = m->body_mocapid[body];
+      const int mocap = m->body_mocapid[mj_name2id(m, mjOBJ_BODY, "smplh_contact_target_0")];
       d->time = 0; bridge.beforeStep(m, d);
       const double x = d->mocap_pos[3*mocap];
       const bool frozen = std::getenv("SMPLH_FREEZE_FRAME");

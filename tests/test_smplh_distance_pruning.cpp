@@ -1,4 +1,4 @@
-#include "../smplh_playback/SmplhDistanceWorker.h"
+#include "SmplhDistanceWorker.h"
 #include <chrono>
 #include <thread>
 #include <stdexcept>
@@ -34,7 +34,8 @@ int main()
       float vertices[]{1000, 0, 0, 1000, 1, 0, 1000, 0, 1,
                        x, -1, -1, 1000, 0, 0, x, 1, -1, 1000, 0, 0, x, 0, 1};
       ++sequence;
-      worker.submit(sequence, sequence, 0, vertices, 8, data, model, 0);
+      worker.submit(sequence, static_cast<uint32_t>(sequence), 0, vertices, 8,
+                    nullptr, 1.0, true, data, model, 0);
       human_robot_distance::Snapshot snapshot;
       auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
       do

@@ -387,13 +387,10 @@ effective-mass variation, and post-contact force are outside this baseline.
 ## Build and run
 
 Start with the [SMPL-H playback guide](../smplh_playback/README.md) and a
-prepared licensed cache. The bridge installer is idempotent for the current
-external `mc_mujoco` source:
+prepared licensed cache. The superbuild fetches the owned simulator fork:
 
 ```sh
-python3 smplh_playback/install_bridge.py --source ~/workspace/src/mc_mujoco
-cmake --build ~/workspace/build/mc_mujoco -j2
-cmake --install ~/workspace/build/mc_mujoco --prefix ~/workspace/install
+cmake --build --preset relwithdebinfo --target mc_mujoco
 cmake -S kinova_controllers -B /tmp/kinova-ssm-build \
   -DCMAKE_PREFIX_PATH=~/workspace/install
 cmake --build /tmp/kinova-ssm-build -j2

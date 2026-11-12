@@ -1,4 +1,4 @@
-#include "../smplh_playback/SmplhDistanceWorker.h"
+#include "SmplhDistanceWorker.h"
 
 #include <cmath>
 #include <stdexcept>

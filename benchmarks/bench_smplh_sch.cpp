@@ -1,4 +1,4 @@
-#include "../smplh_playback/SmplhDistanceWorker.h"
+#include "SmplhDistanceWorker.h"
 
 #include <algorithm>
 #include <chrono>
@@ -75,7 +75,8 @@ int main(int argc, char ** argv)
         vertices[3*v+2] = static_cast<float>(.001 * std::sin(.1*sample + .03*v));
       const uint64_t sequence = static_cast<uint64_t>(sample + 1);
       worker.submit(sequence, static_cast<uint32_t>(sequence), sample*.025,
-                    vertices.data(), static_cast<uint32_t>(vertices.size()/3), data, model, 0);
+                    vertices.data(), static_cast<uint32_t>(vertices.size()/3),
+                    nullptr, .025, true, data, model, 0);
       human_robot_distance::Snapshot result;
       const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
       do

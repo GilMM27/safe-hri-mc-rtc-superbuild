@@ -43,7 +43,7 @@ def write_human_xml(output, vertices, faces):
         bodies.append(body)
     from .contact_proxies import add_contact_proxies
     rest_joints = np.array([[0, 0, 1]] + [[.03*i, 0, 1] for i in range(1, 52)])
-    add_contact_proxies(world, vertices[0], rest_joints, np.repeat(np.eye(52), 4, axis=0), REGIONS)
+    add_contact_proxies(world, vertices[0], rest_joints, np.repeat(np.eye(52), 4, axis=0), REGIONS, root)
     ET.ElementTree(root).write(output / 'human.xml')
     (output / 'smplh.yaml').write_text(f'xmlModelPath: {json.dumps(str((output / "human.xml").resolve()))}\n')
 

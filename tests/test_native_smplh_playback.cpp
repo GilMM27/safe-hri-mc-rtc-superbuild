@@ -1,4 +1,4 @@
-#include "../smplh_playback/NativeSmplhPlayback.h"
+#include "SmplhBridge.h"
 
 #include <cmath>
 #include <iostream>
