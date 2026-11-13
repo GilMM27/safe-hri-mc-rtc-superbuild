@@ -31,7 +31,7 @@ endif()
 
 AddProject(mc_mujoco
   GITHUB GilMM27/mc_mujoco
-  GIT_TAG origin/main
+  GIT_TAG origin/feat/ssmpfl-collision-geometry-config
   CMAKE_ARGS -DMUJOCO_ROOT_DIR=${MUJOCO_ROOT_DIR}
   DEPENDS mc_rtc human_robot_distance_api
 )

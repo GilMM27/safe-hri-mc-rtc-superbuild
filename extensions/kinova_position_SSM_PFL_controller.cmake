@@ -7,7 +7,7 @@ endif()
 
 AddProject(kinova_position_SSM_PFL_controller
   GITHUB GilMM27/kinova_position_SSM_PFL_controller
-  GIT_TAG origin/main
+  GIT_TAG origin/feat/ssmpfl-force-speed-log
   CMAKE_ARGS -DWITH_SMPLH_CONTACT_LOGGING=${WITH_SMPLH_PLAYBACK}
   DEPENDS mc_rtc human_robot_distance_api ${SMPLH_FORCE_LOG_ARGS}
 )
