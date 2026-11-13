@@ -157,8 +157,10 @@ MuJoCo weld to a mocap target following the recorded pose. This is the default
 `solimp=".95 .99 .001"`; capsule density is `1000 kg/m³`, contact friction is
 `1 .005 .0001`, and contact `solref`/`solimp` are `.02 1`/`.9 .95 .001`.
 The controller also projects
-position servo targets away from contact. The visible surface and distance
-queries remain separate from these collision shapes. Regenerate older caches
+position servo targets away from contact. The visible surface remains separate
+from these collision shapes. The SSM+PFL distance query uses the contact
+capsules by default; set `SSMPFL.SeparationGeometry: mesh` to use the surface.
+Regenerate older caches
 with `smplh_playback.prepare`; the bridge does not rewrite them.
 
 `SMPLH_CONTACT_MODE=kinematic` uses duplicate mocap collision capsules, and

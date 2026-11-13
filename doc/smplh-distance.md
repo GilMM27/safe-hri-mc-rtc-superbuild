@@ -55,7 +55,12 @@ snapshot in the background. Before each controller run, completed results are
 published as `HumanRobotDistance::Snapshot` in the datastore. Results include sample
 age, motion frame, readiness, per-region and per-link closest points, selected
 robot geom, and clearance. The playback bridge compares each human region with
-MuJoCo group 2 geometry on the seven movable Kinova joint links. The fixed
+MuJoCo group 2 geometry on the seven movable Kinova joint links. By default,
+`SSMPFL.SeparationGeometry: collision` uses the corresponding 14 SMPL-H contact
+capsules, including `SMPLHContactSizes` scaling and offsets, for separation.
+Set it to `mesh` for the SMPL-H surface mesh. Capsule distances use SCH by
+default or FCL with `SMPLH_DISTANCE_MODE=fcl`, and require `SMPLH_CONTACT_MODE`
+to be enabled. The fixed
 base is excluded. Fixed descendants belong to their nearest joint link. Each
 pair retains the closest geom on that link. For a valid non-intersecting result,
 the unit direction is
